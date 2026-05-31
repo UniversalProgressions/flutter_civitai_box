@@ -42,16 +42,6 @@ final class ModelVersionFileDao {
         .then((r) => r.isEmpty ? null : r.first),
   );
 
-  Future<Map<String, Object?>?> getByGopeedTaskId(String taskId) => _db.then(
-    (db) => db
-        .query(
-          'model_version_file',
-          where: 'gopeed_task_id = ?',
-          whereArgs: [taskId],
-        )
-        .then((r) => r.isEmpty ? null : r.first),
-  );
-
   Future<List<Map<String, Object?>>> getByModelVersion(int versionId) =>
       _db.then(
         (db) => db.query(

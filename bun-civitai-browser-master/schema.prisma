@@ -119,35 +119,25 @@ model ModelVersion {
 }
 
 model ModelVersionFile {
-  id                 Int     @id
-  sizeKB             Float
-  name               String
-  type               String
-  downloadUrl        String
-  gopeedTaskId       String?  @unique
-  gopeedTaskFinished Boolean
-  gopeedTaskDeleted  Boolean @default(false)
+  id          Int    @id
+  sizeKB      Float
+  name        String
+  type        String
+  downloadUrl String
 
   modelVersionId Int
   modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
-
-  @@index([id, gopeedTaskId])
 }
 
 model ModelVersionImage {
-  id                 Int     @id
-  url                String
-  nsfwLevel          Int
-  width              Int
-  height             Int
-  hash               String
-  type               String
-  gopeedTaskId       String?  @unique
-  gopeedTaskFinished Boolean
-  gopeedTaskDeleted  Boolean @default(false)
+  id        Int    @id
+  url       String
+  nsfwLevel Int
+  width     Int
+  height    Int
+  hash      String
+  type      String
 
   modelVersionId Int
   modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
-
-  @@index([id, gopeedTaskId])
 }

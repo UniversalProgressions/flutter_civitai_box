@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../civitai_api/utils.dart';
 import '../../db/db.dart';
 import '../../services/file_layout.dart';
+import '../../services/model_refresh_bus.dart';
 import '../../settings/settings.dart';
 import 'filter_panel.dart';
 import 'model_card.dart';
@@ -35,13 +36,20 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
   void initState() {
     super.initState();
     _fetch();
+    ModelRefreshBus.instance.addListener(_onDataChanged);
   }
 
   @override
   void dispose() {
+    ModelRefreshBus.instance.removeListener(_onDataChanged);
     _jumpCtrl.dispose();
     _jumpFocus.dispose();
     super.dispose();
+  }
+
+  void _onDataChanged() {
+    _page = 1;
+    _fetch();
   }
 
   Future<void> _fetch() async {

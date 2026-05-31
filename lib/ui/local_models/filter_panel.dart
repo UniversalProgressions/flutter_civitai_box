@@ -1,4 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../../civitai_api/models/enums.dart';
+import '../../db/database.dart';
+import '../../db/dao/creator_dao.dart';
+import '../../db/dao/tag_dao.dart';
 
 /// Filter state passed back from the panel.
 class ModelFilters {
@@ -62,37 +69,25 @@ class _FilterPanelState extends State<FilterPanel> {
   late final TextEditingController _usernameCtrl;
   final List<String> _selectedTypes = [];
   final List<String> _selectedBaseModels = [];
+  late final TextEditingController _typeCtrl;
+  late final TextEditingController _baseModelCtrl;
+  final FocusNode _typeFocus = FocusNode();
+  final FocusNode _baseModelFocus = FocusNode();
+  final List<String> _typeSuggestions = [];
+  final List<String> _baseModelSuggestions = [];
+  late final TextEditingController _tagCtrl;
+  final FocusNode _tagFocus = FocusNode();
+  Timer? _tagDebounce;
+  Timer? _usernameDebounce;
+  final List<String> _tagSuggestions = [];
+  final List<String> _usernameSuggestions = [];
   final List<String> _selectedTags = [];
   bool? _nsfw;
 
-  static const _typeOptions = [
-    'Checkpoint',
-    'LORA',
-    'VAE',
-    'Controlnet',
-    'Upscaler',
-    'TextualInversion',
-    'Hypernetwork',
-    'AestheticGradient',
-    'Poses',
-    'LoCon',
-    'DoRA',
-    'MotionModule',
-    'Wildcards',
-    'Detection',
-  ];
-  static const _baseModelOptions = [
-    'SD 1.5',
-    'SDXL 1.0',
-    'SDXL',
-    'Pony',
-    'Illustrious',
-    'Flux.1',
-    'SD 2.1',
-    'SD 3',
-    'Flux',
-    'NoobAI',
-  ];
+  static final _typeOptions = ModelType.values.map((e) => e.value).toList();
+  static final _baseModelOptions = BaseModel.values
+      .map((e) => e.value)
+      .toList();
 
   @override
   void initState() {
@@ -101,15 +96,94 @@ class _FilterPanelState extends State<FilterPanel> {
     _usernameCtrl = TextEditingController(text: widget.initial.username);
     _selectedTypes.addAll(widget.initial.types);
     _selectedBaseModels.addAll(widget.initial.baseModels);
+    _typeCtrl = TextEditingController();
+    _baseModelCtrl = TextEditingController();
+    _tagCtrl = TextEditingController();
     _selectedTags.addAll(widget.initial.tags);
     _nsfw = widget.initial.nsfw;
+    _typeFocus.addListener(() {
+      if (_typeFocus.hasFocus) {
+        _showAllOptions(_typeOptions, _selectedTypes, _typeSuggestions);
+      }
+    });
+    _baseModelFocus.addListener(() {
+      if (_baseModelFocus.hasFocus) {
+        _showAllOptions(
+          _baseModelOptions,
+          _selectedBaseModels,
+          _baseModelSuggestions,
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
+    _tagDebounce?.cancel();
+    _usernameDebounce?.cancel();
     _queryCtrl.dispose();
     _usernameCtrl.dispose();
+    _typeCtrl.dispose();
+    _baseModelCtrl.dispose();
+    _typeFocus.dispose();
+    _baseModelFocus.dispose();
+    _tagCtrl.dispose();
+    _tagFocus.dispose();
     super.dispose();
+  }
+
+  void _onTagFieldChanged(String value) {
+    _tagDebounce?.cancel();
+    if (value.trim().isEmpty) {
+      setState(() => _tagSuggestions.clear());
+      return;
+    }
+    _tagDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final rows = await const TagDao().search(value.trim());
+      if (!mounted) return;
+      setState(() {
+        _tagSuggestions.clear();
+        for (final row in rows) {
+          final name = row['name'] as String;
+          if (!_selectedTags.contains(name)) {
+            _tagSuggestions.add(name);
+          }
+        }
+      });
+    });
+  }
+
+  void _onUsernameFieldChanged(String value) {
+    _usernameDebounce?.cancel();
+    if (value.trim().isEmpty) {
+      setState(() => _usernameSuggestions.clear());
+      return;
+    }
+    _usernameDebounce = Timer(const Duration(milliseconds: 300), () async {
+      final db = (await CivitaiDatabase.instance).db;
+      final rows = await db.rawQuery(
+        'SELECT DISTINCT username FROM creator WHERE username LIKE ? COLLATE NOCASE LIMIT 20',
+        ['%${value.trim()}%'],
+      );
+      if (!mounted) return;
+      setState(() {
+        _usernameSuggestions.clear();
+        for (final row in rows) {
+          _usernameSuggestions.add(row['username'] as String);
+        }
+      });
+    });
+  }
+
+  void _addTag(String tag) {
+    setState(() {
+      _selectedTags.add(tag);
+      _tagSuggestions.remove(tag);
+    });
+  }
+
+  void _removeTag(String tag) {
+    setState(() => _selectedTags.remove(tag));
   }
 
   void _apply() {
@@ -158,17 +232,49 @@ class _FilterPanelState extends State<FilterPanel> {
               ),
             ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _usernameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Creator username',
-                prefixIcon: Icon(Icons.person_outline),
-                isDense: true,
-              ),
-            ),
+            _usernameAutocompleteSection(),
             const SizedBox(height: 12),
-            _chipSection('Type', _typeOptions, _selectedTypes),
-            _chipSection('Base Model', _baseModelOptions, _selectedBaseModels),
+            _searchableChipSection(
+              label: 'Type',
+              allOptions: _typeOptions,
+              selected: _selectedTypes,
+              suggestions: _typeSuggestions,
+              controller: _typeCtrl,
+              focusNode: _typeFocus,
+              icon: Icons.category_outlined,
+              onChanged: (v) => _onLocalFilterChanged(
+                v,
+                _typeOptions,
+                _selectedTypes,
+                _typeSuggestions,
+              ),
+              onAdd: (v) => setState(() => _selectedTypes.add(v)),
+              onRemove: (v) => setState(() => _selectedTypes.remove(v)),
+              onClearAll: () => setState(() => _selectedTypes.clear()),
+              onDismiss: () => setState(() => _typeSuggestions.clear()),
+            ),
+            _searchableChipSection(
+              label: 'Base Model',
+              allOptions: _baseModelOptions,
+              selected: _selectedBaseModels,
+              suggestions: _baseModelSuggestions,
+              controller: _baseModelCtrl,
+              focusNode: _baseModelFocus,
+              icon: Icons.architecture,
+              onChanged: (v) => _onLocalFilterChanged(
+                v,
+                _baseModelOptions,
+                _selectedBaseModels,
+                _baseModelSuggestions,
+              ),
+              onAdd: (v) => setState(() => _selectedBaseModels.add(v)),
+              onRemove: (v) => setState(() => _selectedBaseModels.remove(v)),
+              onClearAll: () => setState(() => _selectedBaseModels.clear()),
+              onDismiss: () => setState(() => _baseModelSuggestions.clear()),
+            ),
+            const SizedBox(height: 8),
+            _tagAutocompleteSection(),
+            const SizedBox(height: 8),
             Row(
               children: [
                 const Text('NSFW'),
@@ -206,37 +312,300 @@ class _FilterPanelState extends State<FilterPanel> {
     );
   }
 
-  Widget _chipSection(
-    String label,
-    List<String> options,
+  // ---------------------------------------------------------------------------
+  // Local-filter multi-select (Type / Base Model)
+  // ---------------------------------------------------------------------------
+
+  void _showAllOptions(
+    List<String> allOptions,
     List<String> selected,
+    List<String> suggestions,
   ) {
+    setState(() {
+      suggestions.clear();
+      for (final opt in allOptions) {
+        if (!selected.contains(opt)) suggestions.add(opt);
+      }
+    });
+  }
+
+  void _onLocalFilterChanged(
+    String value,
+    List<String> allOptions,
+    List<String> selected,
+    List<String> suggestions,
+  ) {
+    setState(() {
+      suggestions.clear();
+      if (value.trim().isEmpty) return;
+      final lower = value.trim().toLowerCase();
+      for (final opt in allOptions) {
+        if (!selected.contains(opt) && opt.toLowerCase().contains(lower)) {
+          suggestions.add(opt);
+        }
+      }
+    });
+  }
+
+  Widget _searchableChipSection({
+    required String label,
+    required List<String> allOptions,
+    required List<String> selected,
+    required List<String> suggestions,
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required IconData icon,
+    required ValueChanged<String> onChanged,
+    required ValueChanged<String> onAdd,
+    required ValueChanged<String> onRemove,
+    required VoidCallback onClearAll,
+    required VoidCallback onDismiss,
+  }) {
+    final showSuggestions = suggestions.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: Theme.of(context).textTheme.titleSmall),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 6,
-          children: options.map((o) {
-            final active = selected.contains(o);
-            return FilterChip(
-              label: Text(o),
-              selected: active,
-              onSelected: (v) {
-                setState(() {
-                  if (v) {
-                    selected.add(o);
-                  } else {
-                    selected.remove(o);
-                  }
-                });
-              },
-              visualDensity: VisualDensity.compact,
-            );
-          }).toList(),
+        Row(
+          children: [
+            Text(label, style: Theme.of(context).textTheme.titleSmall),
+            const Spacer(),
+            if (selected.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  onClearAll();
+                  _showAllOptions(allOptions, selected, suggestions);
+                },
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: const Text('Clear all', style: TextStyle(fontSize: 12)),
+              ),
+          ],
         ),
+        const SizedBox(height: 4),
+        if (selected.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Wrap(
+              spacing: 6,
+              children: selected
+                  .map(
+                    (t) => Chip(
+                      label: Text(t),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: () {
+                        onRemove(t);
+                        _onLocalFilterChanged(
+                          controller.text,
+                          allOptions,
+                          selected,
+                          suggestions,
+                        );
+                      },
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        TextField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: InputDecoration(
+            labelText: 'Search $label…',
+            prefixIcon: Icon(icon),
+            isDense: true,
+            suffixIcon: showSuggestions
+                ? IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: onDismiss,
+                    visualDensity: VisualDensity.compact,
+                  )
+                : null,
+          ),
+          onChanged: onChanged,
+        ),
+        if (showSuggestions)
+          Container(
+            constraints: const BoxConstraints(maxHeight: 200),
+            margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: suggestions
+                  .map(
+                    (v) => ListTile(
+                      dense: true,
+                      title: Text(v),
+                      onTap: () {
+                        onAdd(v);
+                        suggestions.remove(v);
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
         const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Username autocomplete
+  // ---------------------------------------------------------------------------
+
+  Widget _usernameAutocompleteSection() {
+    final showSuggestions =
+        _usernameCtrl.text.isNotEmpty && _usernameSuggestions.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _usernameCtrl,
+          decoration: InputDecoration(
+            labelText: 'Creator username',
+            prefixIcon: const Icon(Icons.person_outline),
+            isDense: true,
+            suffixIcon: _usernameCtrl.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      _usernameCtrl.clear();
+                      setState(() => _usernameSuggestions.clear());
+                    },
+                    visualDensity: VisualDensity.compact,
+                  )
+                : null,
+          ),
+          onChanged: _onUsernameFieldChanged,
+        ),
+        if (showSuggestions)
+          Container(
+            constraints: const BoxConstraints(maxHeight: 200),
+            margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: _usernameSuggestions
+                  .map(
+                    (u) => ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.person, size: 18),
+                      title: Text(u),
+                      onTap: () {
+                        _usernameCtrl.text = u;
+                        _usernameCtrl.selection = TextSelection.collapsed(
+                          offset: u.length,
+                        );
+                        setState(() => _usernameSuggestions.clear());
+                      },
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tag autocomplete
+  // ---------------------------------------------------------------------------
+
+  Widget _tagAutocompleteSection() {
+    final showSuggestions =
+        _tagCtrl.text.isNotEmpty && _tagSuggestions.isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Title + Clear all
+        Row(
+          children: [
+            Text('Tags', style: Theme.of(context).textTheme.titleSmall),
+            const Spacer(),
+            if (_selectedTags.isNotEmpty)
+              TextButton(
+                onPressed: () => setState(() => _selectedTags.clear()),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: const Text('Clear all', style: TextStyle(fontSize: 12)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        if (_selectedTags.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Wrap(
+              spacing: 6,
+              children: _selectedTags
+                  .map(
+                    (t) => Chip(
+                      label: Text(t),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: () => _removeTag(t),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        TextField(
+          controller: _tagCtrl,
+          focusNode: _tagFocus,
+          decoration: InputDecoration(
+            labelText: 'Search tags…',
+            prefixIcon: const Icon(Icons.label_outline),
+            isDense: true,
+            suffixIcon: showSuggestions
+                ? IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() => _tagSuggestions.clear()),
+                    visualDensity: VisualDensity.compact,
+                  )
+                : null,
+          ),
+          onChanged: _onTagFieldChanged,
+        ),
+        if (showSuggestions)
+          Container(
+            constraints: const BoxConstraints(maxHeight: 200),
+            margin: const EdgeInsets.only(top: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ListView(
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              children: _tagSuggestions
+                  .map(
+                    (t) => ListTile(
+                      dense: true,
+                      title: Text(t),
+                      onTap: () => _addTag(t),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
       ],
     );
   }

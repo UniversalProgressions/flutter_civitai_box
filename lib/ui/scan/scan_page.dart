@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../db/db.dart';
+import '../../services/model_refresh_bus.dart';
 import '../../services/scanner/scan_result.dart';
 import '../../services/scanner/scanner_service.dart';
 
@@ -48,6 +49,7 @@ class _ScanPageState extends State<ScanPage> {
           case ScanResult():
             _scanResult = event;
             _scanning = false;
+            ModelRefreshBus.instance.notify();
         }
       });
     }

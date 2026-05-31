@@ -573,4 +573,377 @@ void main() {
       expect(v!['base_model_type_id'], isNull);
     });
   });
+
+  // =========================================================================
+  // User Custom — user_custom_preview
+  // =========================================================================
+  group('UserCustomPreviewDao', () {
+    test('upsert and getByVersion', () async {
+      const dao = UserCustomPreviewDao();
+      await dao.upsert({
+        'model_id': 100,
+        'model_version_id': 200,
+        'file_hash': 'abc123def',
+        'file_name': 'my_cover.png',
+        'format_suffix': 'png',
+      });
+
+      final row = await dao.getByVersion(200);
+      expect(row, isNotNull);
+      expect(row!['file_hash'], 'abc123def');
+      expect(row['format_suffix'], 'png');
+    });
+
+    test('upsert overwrites existing', () async {
+      const dao = UserCustomPreviewDao();
+      await dao.upsert({
+        'model_id': 100,
+        'model_version_id': 201,
+        'file_hash': 'old',
+        'file_name': 'old.png',
+        'format_suffix': 'png',
+      });
+      await dao.upsert({
+        'model_id': 100,
+        'model_version_id': 201,
+        'file_hash': 'new',
+        'file_name': 'new.jpg',
+        'format_suffix': 'jpg',
+      });
+
+      final row = await dao.getByVersion(201);
+      expect(row!['file_hash'], 'new');
+      expect(row['file_name'], 'new.jpg');
+    });
+
+    test('getByModel returns all version previews', () async {
+      const dao = UserCustomPreviewDao();
+      await dao.upsert({
+        'model_id': 300,
+        'model_version_id': 400,
+        'file_hash': 'h1',
+        'file_name': 'a.png',
+        'format_suffix': 'png',
+      });
+      await dao.upsert({
+        'model_id': 300,
+        'model_version_id': 401,
+        'file_hash': 'h2',
+        'file_name': 'b.png',
+        'format_suffix': 'png',
+      });
+
+      final results = await dao.getByModel(300);
+      expect(results.length, 2);
+    });
+
+    test('deleteByVersion', () async {
+      const dao = UserCustomPreviewDao();
+      await dao.upsert({
+        'model_id': 500,
+        'model_version_id': 600,
+        'file_hash': 'del',
+        'file_name': 'x.png',
+        'format_suffix': 'png',
+      });
+      await dao.deleteByVersion(600);
+      expect(await dao.getByVersion(600), isNull);
+    });
+  });
+
+  // =========================================================================
+  // User Custom — user_custom_tag
+  // =========================================================================
+  group('UserCustomTagDao', () {
+    test('insert and getByVersion', () async {
+      const dao = UserCustomTagDao();
+      await dao.insert({
+        'model_id': 100,
+        'model_version_id': 200,
+        'tag_name': 'favorite',
+      });
+      await dao.insert({
+        'model_id': 100,
+        'model_version_id': 200,
+        'tag_name': 'tested',
+      });
+
+      final tags = await dao.getByVersion(200);
+      expect(tags.length, 2);
+      final names = tags.map((t) => t['tag_name']).toSet();
+      expect(names, containsAll(['favorite', 'tested']));
+    });
+
+    test('replaceTags atomically swaps tag set', () async {
+      const dao = UserCustomTagDao();
+      await dao.insert({
+        'model_id': 100,
+        'model_version_id': 300,
+        'tag_name': 'old1',
+      });
+      await dao.insert({
+        'model_id': 100,
+        'model_version_id': 300,
+        'tag_name': 'old2',
+      });
+
+      await dao.replaceTags(100, 300, ['newA', 'newB']);
+      final tags = await dao.getByVersion(300);
+      expect(tags.length, 2);
+      final names = tags.map((t) => t['tag_name']).toSet();
+      expect(names, containsAll(['newA', 'newB']));
+      expect(names, isNot(contains('old1')));
+    });
+
+    test('duplicate tags ignored via UNIQUE', () async {
+      const dao = UserCustomTagDao();
+      await dao.insert({
+        'model_id': 100,
+        'model_version_id': 400,
+        'tag_name': 'dup',
+      });
+      // Second insert with same composite key should be ignored
+      await dao.insert({
+        'model_id': 100,
+        'model_version_id': 400,
+        'tag_name': 'dup',
+      });
+      final tags = await dao.getByVersion(400);
+      expect(tags.length, 1);
+    });
+
+    test('deleteByVersion', () async {
+      const dao = UserCustomTagDao();
+      await dao.insert({
+        'model_id': 100,
+        'model_version_id': 500,
+        'tag_name': 'temp',
+      });
+      await dao.deleteByVersion(500);
+      expect((await dao.getByVersion(500)), isEmpty);
+    });
+  });
+
+  // =========================================================================
+  // User Custom — user_note (model-level + version-level)
+  // =========================================================================
+  group('UserNoteDao', () {
+    test('upsert and get model-level note', () async {
+      const dao = UserNoteDao();
+      await dao.upsertModelNote(100, '# Model Note\n\nGreat model!');
+
+      final note = await dao.getModelNote(100);
+      expect(note, isNotNull);
+      expect(note!['content'], '# Model Note\n\nGreat model!');
+      expect(note['model_version_id'], isNull);
+    });
+
+    test('upsert and get version-level note', () async {
+      const dao = UserNoteDao();
+      await dao.upsertVersionNote(100, 200, '## Version Note\n\nv1 tweaks');
+
+      final note = await dao.getVersionNote(200);
+      expect(note, isNotNull);
+      expect(note!['content'], '## Version Note\n\nv1 tweaks');
+      expect(note['model_version_id'], 200);
+    });
+
+    test('model note overwrites (one per model)', () async {
+      const dao = UserNoteDao();
+      await dao.upsertModelNote(300, 'First');
+      await dao.upsertModelNote(300, 'Second');
+
+      final note = await dao.getModelNote(300);
+      expect(note!['content'], 'Second');
+    });
+
+    test('version note overwrites (one per version)', () async {
+      const dao = UserNoteDao();
+      await dao.upsertVersionNote(400, 500, 'v1');
+      await dao.upsertVersionNote(400, 500, 'v1 updated');
+
+      final note = await dao.getVersionNote(500);
+      expect(note!['content'], 'v1 updated');
+    });
+
+    test('model and version notes coexist independently', () async {
+      const dao = UserNoteDao();
+      await dao.upsertModelNote(600, 'Model-level');
+      await dao.upsertVersionNote(600, 700, 'Version-level');
+
+      final modelNote = await dao.getModelNote(600);
+      final versionNote = await dao.getVersionNote(700);
+      expect(modelNote!['content'], 'Model-level');
+      expect(versionNote!['content'], 'Version-level');
+    });
+
+    test('getAllByModel returns model + version notes', () async {
+      const dao = UserNoteDao();
+      await dao.upsertModelNote(800, 'Model');
+      await dao.upsertVersionNote(800, 900, 'V1');
+      await dao.upsertVersionNote(800, 901, 'V2');
+
+      final all = await dao.getAllByModel(800);
+      expect(all.length, 3);
+    });
+
+    test('deleteModelNote and deleteVersionNote', () async {
+      const dao = UserNoteDao();
+      await dao.upsertModelNote(1000, 'To delete');
+      await dao.upsertVersionNote(1000, 1100, 'Also delete');
+
+      await dao.deleteModelNote(1000);
+      await dao.deleteVersionNote(1100);
+
+      expect(await dao.getModelNote(1000), isNull);
+      expect(await dao.getVersionNote(1100), isNull);
+    });
+  });
+
+  // =========================================================================
+  // Saved Search
+  // =========================================================================
+  group('SavedSearchDao', () {
+    test('upsert and getByName', () async {
+      const dao = SavedSearchDao();
+      await dao.upsert('My Filters', '{"types":["LORA"],"nsfw":false}');
+
+      final row = await dao.getByName('My Filters');
+      expect(row, isNotNull);
+      expect(row!['json'], '{"types":["LORA"],"nsfw":false}');
+    });
+
+    test('upsert overwrites by name', () async {
+      const dao = SavedSearchDao();
+      await dao.upsert('Preset', '{"query":"a"}');
+      await dao.upsert('Preset', '{"query":"b"}');
+
+      final row = await dao.getByName('Preset');
+      expect(row!['json'], '{"query":"b"}');
+    });
+
+    test('getAll sorted by name', () async {
+      const dao = SavedSearchDao();
+      await dao.upsert('B Filter', '{}');
+      await dao.upsert('A Filter', '{}');
+      await dao.upsert('C Filter', '{}');
+
+      final all = await dao.getAll();
+      expect(all.length, 3);
+      expect(all[0]['name'], 'A Filter');
+      expect(all[2]['name'], 'C Filter');
+    });
+
+    test('delete and deleteByName', () async {
+      const dao = SavedSearchDao();
+      await dao.upsert('ToDelete', '{}');
+      await dao.deleteByName('ToDelete');
+      expect(await dao.getByName('ToDelete'), isNull);
+
+      await dao.upsert('ById', '{}');
+      final row = await dao.getByName('ById');
+      await dao.delete(row!['id'] as int);
+      expect(await dao.getByName('ById'), isNull);
+    });
+  });
+
+  // =========================================================================
+  // User data survives model deletion
+  // =========================================================================
+  group('User data survives model deletion', () {
+    setUp(() async {
+      // Insert a model + version
+      final fixture = _fixture('modelVersion_endpoint_response.json');
+      final modelData = fixture['model'] as Map<String, dynamic>;
+      final images = (fixture['images'] as List)
+          .map(
+            (img) => {
+              'id': _imageId(img),
+              'url': img['url'],
+              'nsfwLevel': img['nsfwLevel'],
+              'width': img['width'],
+              'height': img['height'],
+              'hash': img['hash'],
+              'type': img['type'],
+            },
+          )
+          .toList();
+      final files = (fixture['files'] as List).map((f) {
+        return {
+          'id': f['id'],
+          'sizeKB': f['sizeKB'],
+          'name': f['name'],
+          'type': f['type'],
+          'downloadUrl': f['downloadUrl'],
+        };
+      }).toList();
+
+      const repo = ModelVersionRepository();
+      await repo.upsertVersion(
+        id: fixture['id'],
+        modelId: fixture['modelId'],
+        name: fixture['name'],
+        baseModelName: fixture['baseModel'],
+        baseModelTypeName: fixture['baseModelType'],
+        nsfwLevel: fixture['nsfwLevel'],
+        versionJson: fixture,
+        modelJson: modelData,
+        modelName: modelData['name'],
+        creatorJson: null,
+        modelTypeName: modelData['type'],
+        tagNames: [],
+        modelNsfw: modelData['nsfw'] ?? false,
+        modelNsfwLevel: 0,
+        images: images,
+        files: files,
+      );
+
+      // Add user custom data
+      const previewDao = UserCustomPreviewDao();
+      await previewDao.upsert({
+        'model_id': 1595884,
+        'model_version_id': 1805971,
+        'file_hash': 'abc',
+        'file_name': 'cover.png',
+        'format_suffix': 'png',
+      });
+
+      const tagDao = UserCustomTagDao();
+      await tagDao.insert({
+        'model_id': 1595884,
+        'model_version_id': 1805971,
+        'tag_name': 'my-tag',
+      });
+
+      const noteDao = UserNoteDao();
+      await noteDao.upsertModelNote(1595884, 'Model note');
+      await noteDao.upsertVersionNote(1595884, 1805971, 'Version note');
+    });
+
+    test('user data preserved after deleteVersion', () async {
+      const repo = ModelVersionRepository();
+      await repo.deleteVersion(1805971);
+
+      // CivitAI data is gone
+      const versionDao = ModelVersionDao();
+      expect(await versionDao.getById(1805971), isNull);
+
+      // User data survives
+      const previewDao = UserCustomPreviewDao();
+      final preview = await previewDao.getByVersion(1805971);
+      expect(preview, isNotNull);
+      expect(preview!['file_hash'], 'abc');
+
+      const tagDao = UserCustomTagDao();
+      final tags = await tagDao.getByVersion(1805971);
+      expect(tags.length, 1);
+      expect(tags.first['tag_name'], 'my-tag');
+
+      const noteDao = UserNoteDao();
+      final modelNote = await noteDao.getModelNote(1595884);
+      expect(modelNote, isNotNull);
+      final versionNote = await noteDao.getVersionNote(1805971);
+      expect(versionNote, isNotNull);
+    });
+  });
 }

@@ -2,6 +2,7 @@
 ///
 /// These are plain Dart enums — no Freezed needed since they are simple
 /// value types with fixed sets of possible values.
+library;
 
 /// Model type categories on CivitAI.
 enum ModelType {

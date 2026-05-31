@@ -135,14 +135,9 @@ CREATE TABLE IF NOT EXISTS model_version_file (
   name                 TEXT    NOT NULL,
   type                 TEXT    NOT NULL,
   download_url         TEXT    NOT NULL,
-  gopeed_task_id       TEXT    UNIQUE,
-  gopeed_task_finished INTEGER NOT NULL DEFAULT 0,
-  gopeed_task_deleted  INTEGER NOT NULL DEFAULT 0,
   model_version_id     INTEGER NOT NULL,
   FOREIGN KEY (model_version_id) REFERENCES model_version(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_model_version_file_task
-  ON model_version_file(id, gopeed_task_id);
 ''';
 
 /// ---------------------------------------------------------------------------
@@ -157,14 +152,78 @@ CREATE TABLE IF NOT EXISTS model_version_image (
   height               INTEGER NOT NULL,
   hash                 TEXT    NOT NULL,
   type                 TEXT    NOT NULL,
-  gopeed_task_id       TEXT    UNIQUE,
-  gopeed_task_finished INTEGER NOT NULL DEFAULT 0,
-  gopeed_task_deleted  INTEGER NOT NULL DEFAULT 0,
   model_version_id     INTEGER NOT NULL,
   FOREIGN KEY (model_version_id) REFERENCES model_version(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_model_version_image_task
-  ON model_version_image(id, gopeed_task_id);
+''';
+
+/// ---------------------------------------------------------------------------
+/// UserCustomPreview
+/// ---------------------------------------------------------------------------
+const String createUserCustomPreviewTable = '''
+CREATE TABLE IF NOT EXISTS user_custom_preview (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  model_id         INTEGER NOT NULL,
+  model_version_id INTEGER NOT NULL UNIQUE,
+  file_hash        TEXT    NOT NULL,
+  file_name        TEXT    NOT NULL,
+  format_suffix    TEXT    NOT NULL,
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_user_custom_preview_model
+  ON user_custom_preview(model_id);
+CREATE INDEX IF NOT EXISTS idx_user_custom_preview_version
+  ON user_custom_preview(model_version_id);
+''';
+
+/// ---------------------------------------------------------------------------
+/// UserCustomTag
+/// ---------------------------------------------------------------------------
+const String createUserCustomTagTable = '''
+CREATE TABLE IF NOT EXISTS user_custom_tag (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  model_id         INTEGER NOT NULL,
+  model_version_id INTEGER NOT NULL,
+  tag_name         TEXT    NOT NULL,
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(model_version_id, tag_name)
+);
+CREATE INDEX IF NOT EXISTS idx_user_custom_tag_version
+  ON user_custom_tag(model_version_id);
+CREATE INDEX IF NOT EXISTS idx_user_custom_tag_name
+  ON user_custom_tag(tag_name COLLATE NOCASE);
+''';
+
+/// ---------------------------------------------------------------------------
+/// UserNote
+/// ---------------------------------------------------------------------------
+const String createUserNoteTable = '''
+CREATE TABLE IF NOT EXISTS user_note (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  model_id         INTEGER NOT NULL,
+  model_version_id INTEGER,
+  content          TEXT    NOT NULL DEFAULT '',
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_note_model
+  ON user_note(model_id) WHERE model_version_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_note_version
+  ON user_note(model_version_id) WHERE model_version_id IS NOT NULL;
+''';
+
+/// ---------------------------------------------------------------------------
+/// SavedSearch
+/// ---------------------------------------------------------------------------
+const String createSavedSearchTable = '''
+CREATE TABLE IF NOT EXISTS saved_search (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT    NOT NULL UNIQUE,
+  json       TEXT    NOT NULL DEFAULT '{}',
+  created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
 ''';
 
 /// Ordered list of all CREATE statements for the migration runner.
@@ -179,4 +238,8 @@ const List<String> allCreateStatements = [
   createModelVersionTable,
   createModelVersionFileTable,
   createModelVersionImageTable,
+  createUserCustomPreviewTable,
+  createUserCustomTagTable,
+  createUserNoteTable,
+  createSavedSearchTable,
 ];

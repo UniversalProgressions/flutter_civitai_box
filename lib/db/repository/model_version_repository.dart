@@ -116,9 +116,8 @@ final class ModelVersionRepository {
       for (final img in images) {
         await txn.rawInsert(
           '''INSERT INTO model_version_image
-             (id, url, nsfw_level, width, height, hash, type,
-              gopeed_task_finished, gopeed_task_deleted, model_version_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+             (id, url, nsfw_level, width, height, hash, type, model_version_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                url=excluded.url, nsfw_level=excluded.nsfw_level,
                width=excluded.width, height=excluded.height,
@@ -140,9 +139,8 @@ final class ModelVersionRepository {
       for (final f in files) {
         await txn.rawInsert(
           '''INSERT INTO model_version_file
-             (id, size_kb, name, type, download_url,
-              gopeed_task_finished, gopeed_task_deleted, model_version_id)
-             VALUES (?, ?, ?, ?, ?, 0, 0, ?)
+             (id, size_kb, name, type, download_url, model_version_id)
+             VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                size_kb=excluded.size_kb, name=excluded.name,
                type=excluded.type, download_url=excluded.download_url''',

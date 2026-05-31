@@ -74,3 +74,23 @@ String getModelVersionApiInfoJsonPath(
   getModelVersionPath(basePath, modelType, modelId, versionId),
   getApiInfoJsonFileName(versionId),
 );
+
+// ---------------------------------------------------------------------------
+// User-custom file paths (survives model deletion)
+// ---------------------------------------------------------------------------
+
+/// `{basePath}/user_custom/previews`
+String getUserCustomPreviewsDir(String basePath) =>
+    p.join(p.normalize(basePath), 'user_custom', 'previews');
+
+/// `{basePath}/user_custom/previews/{modelId}_{versionId}.{formatSuffix}`
+String getUserCustomPreviewPath(
+  String basePath,
+  int modelId,
+  int versionId,
+  String formatSuffix,
+) => p.join(
+  getUserCustomPreviewsDir(basePath),
+  '${modelId}_$versionId.$formatSuffix',
+);
+/// `{basePath}/{modelType}/{modelId}/{versionId}/{versionId}.api-info.json`
