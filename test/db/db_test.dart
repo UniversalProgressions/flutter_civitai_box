@@ -725,82 +725,6 @@ void main() {
   });
 
   // =========================================================================
-  // User Custom — user_note (model-level + version-level)
-  // =========================================================================
-  group('UserNoteDao', () {
-    test('upsert and get model-level note', () async {
-      const dao = UserNoteDao();
-      await dao.upsertModelNote(100, '# Model Note\n\nGreat model!');
-
-      final note = await dao.getModelNote(100);
-      expect(note, isNotNull);
-      expect(note!['content'], '# Model Note\n\nGreat model!');
-      expect(note['model_version_id'], isNull);
-    });
-
-    test('upsert and get version-level note', () async {
-      const dao = UserNoteDao();
-      await dao.upsertVersionNote(100, 200, '## Version Note\n\nv1 tweaks');
-
-      final note = await dao.getVersionNote(200);
-      expect(note, isNotNull);
-      expect(note!['content'], '## Version Note\n\nv1 tweaks');
-      expect(note['model_version_id'], 200);
-    });
-
-    test('model note overwrites (one per model)', () async {
-      const dao = UserNoteDao();
-      await dao.upsertModelNote(300, 'First');
-      await dao.upsertModelNote(300, 'Second');
-
-      final note = await dao.getModelNote(300);
-      expect(note!['content'], 'Second');
-    });
-
-    test('version note overwrites (one per version)', () async {
-      const dao = UserNoteDao();
-      await dao.upsertVersionNote(400, 500, 'v1');
-      await dao.upsertVersionNote(400, 500, 'v1 updated');
-
-      final note = await dao.getVersionNote(500);
-      expect(note!['content'], 'v1 updated');
-    });
-
-    test('model and version notes coexist independently', () async {
-      const dao = UserNoteDao();
-      await dao.upsertModelNote(600, 'Model-level');
-      await dao.upsertVersionNote(600, 700, 'Version-level');
-
-      final modelNote = await dao.getModelNote(600);
-      final versionNote = await dao.getVersionNote(700);
-      expect(modelNote!['content'], 'Model-level');
-      expect(versionNote!['content'], 'Version-level');
-    });
-
-    test('getAllByModel returns model + version notes', () async {
-      const dao = UserNoteDao();
-      await dao.upsertModelNote(800, 'Model');
-      await dao.upsertVersionNote(800, 900, 'V1');
-      await dao.upsertVersionNote(800, 901, 'V2');
-
-      final all = await dao.getAllByModel(800);
-      expect(all.length, 3);
-    });
-
-    test('deleteModelNote and deleteVersionNote', () async {
-      const dao = UserNoteDao();
-      await dao.upsertModelNote(1000, 'To delete');
-      await dao.upsertVersionNote(1000, 1100, 'Also delete');
-
-      await dao.deleteModelNote(1000);
-      await dao.deleteVersionNote(1100);
-
-      expect(await dao.getModelNote(1000), isNull);
-      expect(await dao.getVersionNote(1100), isNull);
-    });
-  });
-
-  // =========================================================================
   // Saved Search
   // =========================================================================
   group('SavedSearchDao', () {
@@ -914,10 +838,6 @@ void main() {
         'model_version_id': 1805971,
         'tag_name': 'my-tag',
       });
-
-      const noteDao = UserNoteDao();
-      await noteDao.upsertModelNote(1595884, 'Model note');
-      await noteDao.upsertVersionNote(1595884, 1805971, 'Version note');
     });
 
     test('user data preserved after deleteVersion', () async {
@@ -938,12 +858,6 @@ void main() {
       final tags = await tagDao.getByVersion(1805971);
       expect(tags.length, 1);
       expect(tags.first['tag_name'], 'my-tag');
-
-      const noteDao = UserNoteDao();
-      final modelNote = await noteDao.getModelNote(1595884);
-      expect(modelNote, isNotNull);
-      final versionNote = await noteDao.getVersionNote(1805971);
-      expect(versionNote, isNotNull);
     });
   });
 }

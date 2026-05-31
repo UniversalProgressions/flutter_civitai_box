@@ -93,4 +93,24 @@ String getUserCustomPreviewPath(
   getUserCustomPreviewsDir(basePath),
   '${modelId}_$versionId.$formatSuffix',
 );
+
+// ---------------------------------------------------------------------------
+// Markdown note file paths
+// ---------------------------------------------------------------------------
+
+/// `{basePath}/user_custom/markdown_notes`
+String getUserCustomMarkdownNotesDir(String basePath) =>
+    p.join(p.normalize(basePath), 'user_custom', 'markdown_notes');
+
+/// `{basePath}/user_custom/markdown_notes/{modelId}.md` — model-level note
+String getUserCustomModelNotePath(String basePath, int modelId) =>
+    p.join(getUserCustomMarkdownNotesDir(basePath), '$modelId.md');
+
+/// `{basePath}/user_custom/markdown_notes/{modelId}_{versionId}.md` — version-level note
+String getUserCustomVersionNotePath(
+  String basePath,
+  int modelId,
+  int versionId,
+) =>
+    p.join(getUserCustomMarkdownNotesDir(basePath), '${modelId}_$versionId.md');
 /// `{basePath}/{modelType}/{modelId}/{versionId}/{versionId}.api-info.json`

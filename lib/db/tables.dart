@@ -196,24 +196,6 @@ CREATE INDEX IF NOT EXISTS idx_user_custom_tag_name
 ''';
 
 /// ---------------------------------------------------------------------------
-/// UserNote
-/// ---------------------------------------------------------------------------
-const String createUserNoteTable = '''
-CREATE TABLE IF NOT EXISTS user_note (
-  id               INTEGER PRIMARY KEY AUTOINCREMENT,
-  model_id         INTEGER NOT NULL,
-  model_version_id INTEGER,
-  content          TEXT    NOT NULL DEFAULT '',
-  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-  updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_note_model
-  ON user_note(model_id) WHERE model_version_id IS NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_note_version
-  ON user_note(model_version_id) WHERE model_version_id IS NOT NULL;
-''';
-
-/// ---------------------------------------------------------------------------
 /// SavedSearch
 /// ---------------------------------------------------------------------------
 const String createSavedSearchTable = '''
@@ -240,6 +222,5 @@ const List<String> allCreateStatements = [
   createModelVersionImageTable,
   createUserCustomPreviewTable,
   createUserCustomTagTable,
-  createUserNoteTable,
   createSavedSearchTable,
 ];

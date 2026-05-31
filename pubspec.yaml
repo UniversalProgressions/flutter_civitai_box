@@ -51,6 +51,9 @@ dependencies:
   freezed_annotation: ^3.0.0
   json_annotation: ^4.9.0
   flutter_rust_bridge: ^2.12.0
+  markdown: ^7.3.1
+  sanitize_html: ^2.1.0
+  flutter_widget_from_html_core: ^0.17.2
 
 dev_dependencies:
   flutter_test:

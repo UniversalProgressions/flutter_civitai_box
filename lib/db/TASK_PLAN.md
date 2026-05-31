@@ -16,7 +16,7 @@
 │                      │                                          │
 │  creator             │  user_custom_preview   (1:1 per version) │
 │  model_type          │  user_custom_tag       (free-text tags)  │
-│  tag                 │  user_note             (model + version) │
+│  tag                 │  user_note             (file-based md) │
 │  model               │  saved_search          (filter presets)  │
 │  model_tags          │                                          │
 │  base_model          │                                          │
@@ -37,12 +37,12 @@
 |---|------|---------|--------|
 | 1.1 | `user_custom_preview` table DDL | `tables.dart` | ✅ |
 | 1.2 | `user_custom_tag` table DDL | `tables.dart` | ✅ |
-| 1.3 | `user_note` table DDL | `tables.dart` | ✅ |
+| 1.3 | `user_note` replaced by file-based markdown notes | `services/file_layout.dart` | ✅ |
 | 1.4 | `saved_search` table DDL | `tables.dart` | ✅ |
 | 1.5 | Register all new statements in `allCreateStatements` | `tables.dart` | ✅ |
 | 1.6 | `UserCustomPreviewDao` — CRUD | `dao/user_custom_preview_dao.dart` | ✅ |
 | 1.7 | `UserCustomTagDao` — CRUD + search | `dao/user_custom_tag_dao.dart` | ✅ |
-| 1.8 | `UserNoteDao` — CRUD (model + version level) | `dao/user_note_dao.dart` | ✅ |
+| 1.8 | `UserNoteDao` — removed (replaced by file I/O) | `dao/` (deleted) | ✅ |
 | 1.9 | `SavedSearchDao` — CRUD | `dao/saved_search_dao.dart` | ✅ |
 | 1.10 | Export new DAOs from `db.dart` | `db.dart` | ✅ |
 | 1.11 | Update `SCHEMA.md` with new tables | `SCHEMA.md` | ✅ |
@@ -53,7 +53,7 @@
 |---|------|---------|--------|
 | 2.1 | `user_custom_preview` insert & query | `test/db/db_test.dart` | ✅ |
 | 2.2 | `user_custom_tag` CRUD + free-text | `test/db/db_test.dart` | ✅ |
-| 2.3 | `user_note` model-level + version-level + uniqueness | `test/db/db_test.dart` | ✅ |
+| 2.3 | Markdown note file paths (no unit test needed) | — | ⬜ |
 | 2.4 | `saved_search` save & load JSON round-trip | `test/db/db_test.dart` | ✅ |
 | 2.5 | Verify user data survives model deletion | `test/db/db_test.dart` | ✅ |
 
@@ -69,11 +69,11 @@
 | # | Task | File(s) | Status |
 |---|------|---------|--------|
 | 4.1 | Tag autocomplete in FilterPanel via `TagDao.search()` | `ui/local_models/filter_panel.dart` | ✅ |
-| 4.2 | Load user custom data on model detail page | `ui/local_models/model_detail_page.dart` | ⬜ |
+| 4.2 | Load user custom data on model detail page | `ui/local_models/model_detail_page.dart` | ✅ |
 | 4.3 | Saved search CRUD UI (save / load / delete presets) | `ui/local_models/` | ⬜ |
 | 4.4 | Custom cover image picker & preview | `ui/local_models/` | ⬜ |
 | 4.5 | Custom tags editor | `ui/local_models/` | ⬜ |
-| 4.6 | Note editor with Markdown preview | `ui/local_models/` | ⬜ |
+| 4.6 | Note viewer — reads `.md` files, renders via WebView | `ui/local_models/markdown_note_viewer.dart` | ✅ |
 
 ---
 
@@ -130,31 +130,16 @@ CREATE INDEX IF NOT EXISTS idx_user_custom_tag_name
 
 ---
 
-### 3. `user_note`
+### 3. `user_note` — file-based (not in DB)
 
-Supports **two levels** via partial unique indexes:
+Markdown notes stored as plain `.md` files — no database table needed.
 
-| Scenario | `model_version_id` | Constraint |
-|----------|-------------------|------------|
-| Model-level note (shared across all versions) | `NULL` | One per `model_id` |
-| Version-level note | NOT NULL | One per `model_version_id` |
+| Level | File path |
+|-------|-----------|
+| Model-level | `{basePath}/user_custom/markdown_notes/{modelId}.md` |
+| Version-level | `{basePath}/user_custom/markdown_notes/{modelId}_{versionId}.md` |
 
-```sql
-CREATE TABLE IF NOT EXISTS user_note (
-  id               INTEGER PRIMARY KEY AUTOINCREMENT,
-  model_id         INTEGER NOT NULL,
-  model_version_id INTEGER,            -- NULL = model-level
-  content          TEXT    NOT NULL DEFAULT '',
-  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
-  updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_note_model
-  ON user_note(model_id) WHERE model_version_id IS NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_user_note_version
-  ON user_note(model_version_id) WHERE model_version_id IS NOT NULL;
-```
-
-> **No FK → model / model_version**: survives model deletion.
+> Simple file I/O. No DB migration. Survives model deletion automatically.
 
 ---
 
@@ -235,7 +220,7 @@ String getUserCustomPreviewPath(
 | No FK cascade on user tables | User custom data survives model deletion ("后悔的机会") |
 | `user_custom_preview` 1:1 per version | One cover image per version, `model_version_id UNIQUE` |
 | `user_custom_tag` free-text | Not limited to official CivitAI tags |
-| `user_note` dual-level via partial indexes | Single table, clean semantics, SQLite-native |
+| `user_note` dual-level via partial indexes | File-based — `{basePath}/user_custom/markdown_notes/{id}.md` and `{modelId}_{versionId}.md` |
 | `saved_search.json` TEXT | Flexible schema, matches `ModelFilters` exactly |
 | `model_version_id` in all user tables | Enables loading all custom data for a version in one query batch |
 

@@ -99,14 +99,6 @@ erDiagram
         string tag_name UK
         text created_at
     }
-    UserNote {
-        int id PK
-        int model_id
-        int model_version_id
-        text content
-        text created_at
-        text updated_at
-    }
     SavedSearch {
         int id PK
         string name UK
@@ -246,14 +238,14 @@ Each model can have multiple versions (e.g., v1, v2, inpainting variant).
 
 Downloadable files attached to a model version.
 
-| Column                 | Type      | Constraints                                            |
-| ---------------------- | --------- | ------------------------------------------------------ |
-| `id`                   | `INTEGER` | `PRIMARY KEY` (CivitAI file id)                        |
-| `size_kb`              | `REAL`    | `NOT NULL`                                             |
-| `name`                 | `TEXT`    | `NOT NULL`                                             |
-| `type`                 | `TEXT`    | `NOT NULL` (e.g. `Model`, `Config`, `VAE`)             |
-| `download_url`         | `TEXT`    | `NOT NULL`                                             |
-| `model_version_id`     | `INTEGER` | `NOT NULL`, `FK → model_version(id) ON DELETE CASCADE` |
+| Column             | Type      | Constraints                                            |
+| ------------------ | --------- | ------------------------------------------------------ |
+| `id`               | `INTEGER` | `PRIMARY KEY` (CivitAI file id)                        |
+| `size_kb`          | `REAL`    | `NOT NULL`                                             |
+| `name`             | `TEXT`    | `NOT NULL`                                             |
+| `type`             | `TEXT`    | `NOT NULL` (e.g. `Model`, `Config`, `VAE`)             |
+| `download_url`     | `TEXT`    | `NOT NULL`                                             |
+| `model_version_id` | `INTEGER` | `NOT NULL`, `FK → model_version(id) ON DELETE CASCADE` |
 
 ---
 
@@ -261,16 +253,16 @@ Downloadable files attached to a model version.
 
 Preview images attached to a model version.
 
-| Column                 | Type      | Constraints                                            |
-| ---------------------- | --------- | ------------------------------------------------------ |
-| `id`                   | `INTEGER` | `PRIMARY KEY` (CivitAI image id)                       |
-| `url`                  | `TEXT`    | `NOT NULL`                                             |
-| `nsfw_level`           | `INTEGER` | `NOT NULL`                                             |
-| `width`                | `INTEGER` | `NOT NULL`                                             |
-| `height`               | `INTEGER` | `NOT NULL`                                             |
-| `hash`                 | `TEXT`    | `NOT NULL` (perceptual hash)                           |
-| `type`                 | `TEXT`    | `NOT NULL` (e.g. `image`)                              |
-| `model_version_id`     | `INTEGER` | `NOT NULL`, `FK → model_version(id) ON DELETE CASCADE` |
+| Column             | Type      | Constraints                                            |
+| ------------------ | --------- | ------------------------------------------------------ |
+| `id`               | `INTEGER` | `PRIMARY KEY` (CivitAI image id)                       |
+| `url`              | `TEXT`    | `NOT NULL`                                             |
+| `nsfw_level`       | `INTEGER` | `NOT NULL`                                             |
+| `width`            | `INTEGER` | `NOT NULL`                                             |
+| `height`           | `INTEGER` | `NOT NULL`                                             |
+| `hash`             | `TEXT`    | `NOT NULL` (perceptual hash)                           |
+| `type`             | `TEXT`    | `NOT NULL` (e.g. `image`)                              |
+| `model_version_id` | `INTEGER` | `NOT NULL`, `FK → model_version(id) ON DELETE CASCADE` |
 
 ---
 
@@ -278,14 +270,14 @@ Preview images attached to a model version.
 
 User-defined custom cover image per model version. **No FK → survives model deletion.**
 
-| Column             | Type      | Constraints                 |
-| ------------------ | --------- | --------------------------- |
-| `id`               | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` |
-| `model_id`         | `INTEGER` | `NOT NULL`                  |
-| `model_version_id` | `INTEGER` | `NOT NULL UNIQUE`           |
-| `file_hash`        | `TEXT`    | `NOT NULL` (SHA256)         |
-| `file_name`        | `TEXT`    | `NOT NULL`                  |
-| `format_suffix`    | `TEXT`    | `NOT NULL` (png/jpg/webp)   |
+| Column             | Type      | Constraints                          |
+| ------------------ | --------- | ------------------------------------ |
+| `id`               | `INTEGER` | `PRIMARY KEY AUTOINCREMENT`          |
+| `model_id`         | `INTEGER` | `NOT NULL`                           |
+| `model_version_id` | `INTEGER` | `NOT NULL UNIQUE`                    |
+| `file_hash`        | `TEXT`    | `NOT NULL` (SHA256)                  |
+| `file_name`        | `TEXT`    | `NOT NULL`                           |
+| `format_suffix`    | `TEXT`    | `NOT NULL` (png/jpg/webp)            |
 | `created_at`       | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))` |
 | `updated_at`       | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))` |
 
@@ -300,13 +292,13 @@ File path: `{basePath}/user_custom/previews/{modelId}_{versionId}.{format_suffix
 
 User-defined free-text tags on a model version. Displayed separately from CivitAI official tags. **No FK → survives model deletion.**
 
-| Column             | Type      | Constraints                                   |
-| ------------------ | --------- | --------------------------------------------- |
-| `id`               | `INTEGER` | `PRIMARY KEY AUTOINCREMENT`                   |
-| `model_id`         | `INTEGER` | `NOT NULL`                                    |
-| `model_version_id` | `INTEGER` | `NOT NULL`                                    |
-| `tag_name`         | `TEXT`    | `NOT NULL`                                    |
-| `created_at`       | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))`          |
+| Column             | Type      | Constraints                          |
+| ------------------ | --------- | ------------------------------------ |
+| `id`               | `INTEGER` | `PRIMARY KEY AUTOINCREMENT`          |
+| `model_id`         | `INTEGER` | `NOT NULL`                           |
+| `model_version_id` | `INTEGER` | `NOT NULL`                           |
+| `tag_name`         | `TEXT`    | `NOT NULL`                           |
+| `created_at`       | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))` |
 
 **Unique:** composite (`model_version_id`, `tag_name`).  
 **Indexes:** `idx_user_custom_tag_version` on (`model_version_id`),  
@@ -314,37 +306,17 @@ User-defined free-text tags on a model version. Displayed separately from CivitA
 
 ---
 
-### 13. `user_note`
-
-Markdown notes at **model level** or **version level** via partial unique indexes. **No FK → survives model deletion.**
-
-| Column             | Type      | Constraints                                       |
-| ------------------ | --------- | ------------------------------------------------- |
-| `id`               | `INTEGER` | `PRIMARY KEY AUTOINCREMENT`                       |
-| `model_id`         | `INTEGER` | `NOT NULL`                                        |
-| `model_version_id` | `INTEGER` | nullable (`NULL` = model-level note)              |
-| `content`          | `TEXT`    | `NOT NULL DEFAULT ''` (Markdown)                  |
-| `created_at`       | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))`              |
-| `updated_at`       | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))`              |
-
-**Partial unique indexes:**
-
-- `idx_user_note_model` on (`model_id`) WHERE `model_version_id IS NULL` — one note per model
-- `idx_user_note_version` on (`model_version_id`) WHERE `model_version_id IS NOT NULL` — one note per version
-
----
-
-### 14. `saved_search`
+### 13. `saved_search`
 
 Persisted filter presets. JSON payload mirrors `ModelFilters` from `filter_panel.dart`.
 
-| Column       | Type      | Constraints                             |
-| ------------ | --------- | --------------------------------------- |
-| `id`         | `INTEGER` | `PRIMARY KEY AUTOINCREMENT`             |
-| `name`       | `TEXT`    | `NOT NULL UNIQUE`                       |
-| `json`       | `TEXT`    | `NOT NULL DEFAULT '{}'`                 |
-| `created_at` | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))`    |
-| `updated_at` | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))`    |
+| Column       | Type      | Constraints                          |
+| ------------ | --------- | ------------------------------------ |
+| `id`         | `INTEGER` | `PRIMARY KEY AUTOINCREMENT`          |
+| `name`       | `TEXT`    | `NOT NULL UNIQUE`                    |
+| `json`       | `TEXT`    | `NOT NULL DEFAULT '{}'`              |
+| `created_at` | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))` |
+| `updated_at` | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))` |
 
 JSON schema:
 
@@ -406,10 +378,10 @@ Each table has a corresponding DAO class in `lib/db/dao/`:
 | `model_version`        | `ModelVersionDao`      |
 | `model_version_file`   | `ModelVersionFileDao`  |
 | `model_version_image`  | `ModelVersionImageDao` |
-| `user_custom_preview`  | `UserCustomPreviewDao`  |
-| `user_custom_tag`      | `UserCustomTagDao`      |
-| `user_note`            | `UserNoteDao`           |
-| `saved_search`         | `SavedSearchDao`        |
+| `user_custom_preview`  | `UserCustomPreviewDao` |
+| `user_custom_tag`      | `UserCustomTagDao`     |
+
+| `saved_search`         | `SavedSearchDao`       |
 
 All DAOs follow a consistent pattern: `insert`, `upsert`, `upsertAll`, `getById`, `getAll`, `delete`.  
 `ModelDao` additionally manages the `model_tags` junction via `linkTag`, `setTags`, `getTagIds`, and `unlinkTag`.  

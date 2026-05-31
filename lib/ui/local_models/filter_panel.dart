@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import '../../civitai_api/models/enums.dart';
 import '../../db/database.dart';
-import '../../db/dao/creator_dao.dart';
 import '../../db/dao/tag_dao.dart';
 
 /// Filter state passed back from the panel.

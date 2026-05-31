@@ -4,7 +4,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'settings/settings.dart';
 import 'ui/local_models/local_models_page.dart';
-import 'ui/scan/scan_page.dart';
 import 'ui/settings/settings_page.dart';
 
 void main() async {
@@ -88,7 +87,7 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  final _pages = const <Widget>[ScanPage(), LocalModelsPage(), SettingsPage()];
+  final _pages = const <Widget>[LocalModelsPage(), SettingsPage()];
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +97,6 @@ class _MainShellState extends State<MainShell> {
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.folder_open), label: 'Scan'),
           NavigationDestination(
             icon: Icon(Icons.collections_bookmark),
             label: 'Models',

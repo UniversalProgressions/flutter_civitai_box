@@ -16,7 +16,6 @@ export 'dao/model_version_file_dao.dart';
 export 'dao/model_version_image_dao.dart';
 export 'dao/user_custom_preview_dao.dart';
 export 'dao/user_custom_tag_dao.dart';
-export 'dao/user_note_dao.dart';
 export 'dao/saved_search_dao.dart';
 export 'repository/model_repository.dart';
 export 'repository/model_version_repository.dart';

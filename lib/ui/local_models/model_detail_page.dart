@@ -1,13 +1,16 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' show File, Platform, Process;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:sanitize_html/sanitize_html.dart';
 
 import '../../civitai_api/utils.dart';
 import '../../db/db.dart';
 import '../../services/file_layout.dart';
 import '../../settings/settings.dart';
+import 'markdown_note_viewer.dart';
 import 'media_thumbnail.dart';
 
 /// Full-screen model detail page.
@@ -32,6 +35,7 @@ class _ModelDetailPageState extends State<ModelDetailPage>
   List<_VersionDetail> _versions = [];
   bool _loading = true;
   TabController? _tabController;
+  String _basePath = '';
 
   @override
   void initState() {
@@ -42,7 +46,7 @@ class _ModelDetailPageState extends State<ModelDetailPage>
   Future<void> _load() async {
     final db = await CivitaiDatabase.instance;
     final rows = await db.db.rawQuery(
-      'SELECT mv.*, mt.name AS model_type_name '
+      'SELECT mv.*, m.json AS model_json, mt.name AS model_type_name '
       'FROM model_version mv '
       'JOIN model m ON m.id = mv.model_id '
       'JOIN model_type mt ON mt.id = m.type_id '
@@ -50,7 +54,7 @@ class _ModelDetailPageState extends State<ModelDetailPage>
       [widget.modelId],
     );
     final settings = await SettingsService.getInstance();
-    final basePath = settings.settingsOrNull?.basePath ?? '';
+    _basePath = settings.settingsOrNull?.basePath ?? '';
     final versions = <_VersionDetail>[];
     for (final v in rows) {
       final vid = v['id'] as int;
@@ -63,7 +67,7 @@ class _ModelDetailPageState extends State<ModelDetailPage>
       for (final img in rawImages) {
         final url = img['url'] as String;
         final imageId = extractIdFromImageUrl(url).fold((_) => 0, (id) => id);
-        final mediaDir = getMediaDir(basePath, typeName, widget.modelId, vid);
+        final mediaDir = getMediaDir(_basePath, typeName, widget.modelId, vid);
         String? localPath;
         for (final ext in ['.jpeg', '.jpg', '.png', '.webp', '.gif', '.mp4']) {
           final p = '$mediaDir${Platform.pathSeparator}$imageId$ext';
@@ -94,14 +98,33 @@ class _ModelDetailPageState extends State<ModelDetailPage>
               const JsonDecoder().convert(jsonStr) as Map<String, dynamic>;
         } catch (_) {}
       }
+      // Model-level description
+      final modelJsonStr = v['model_json'] as String?;
+      String? modelDescription;
+      if (modelJsonStr != null && modelJsonStr.isNotEmpty) {
+        try {
+          final modelData =
+              const JsonDecoder().convert(modelJsonStr) as Map<String, dynamic>;
+          modelDescription = modelData['description'] as String?;
+        } catch (_) {}
+      }
+      // Trained / trigger words
+      List<String> trainedWords = [];
+      if (jsonData != null && jsonData['trainedWords'] is List) {
+        trainedWords = List<String>.from(jsonData['trainedWords'] as List);
+      }
       final baseModel = await _resolveBaseModel(v, db);
       versions.add(
         _VersionDetail(
+          id: vid,
           name: v['name'] as String? ?? '',
           baseModel: baseModel,
+          typeName: typeName,
+          modelDescription: modelDescription,
+          trainedWords: trainedWords,
           nsfwLevel: v['nsfw_level'] as int? ?? 0,
           createdAt: v['created_at'] as String?,
-          description: _stripHtml(jsonData?['description'] as String?),
+          description: jsonData?['description'] as String?,
           images: images,
           files: files,
         ),
@@ -128,14 +151,6 @@ class _ModelDetailPageState extends State<ModelDetailPage>
       [bmId],
     );
     return rows.isNotEmpty ? (rows.first['name'] as String) : '';
-  }
-
-  String? _stripHtml(String? html) {
-    if (html == null) return null;
-    return html
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll('&amp;', '&')
-        .trim();
   }
 
   @override
@@ -167,7 +182,15 @@ class _ModelDetailPageState extends State<ModelDetailPage>
                 Expanded(
                   child: TabBarView(
                     controller: _tabController,
-                    children: _versions.map((v) => _VersionSection(v)).toList(),
+                    children: _versions
+                        .map(
+                          (v) => _VersionSection(
+                            version: v,
+                            basePath: _basePath,
+                            modelId: widget.modelId,
+                          ),
+                        )
+                        .toList(),
                   ),
                 ),
               ],
@@ -182,7 +205,14 @@ class _ModelDetailPageState extends State<ModelDetailPage>
 
 class _VersionSection extends StatefulWidget {
   final _VersionDetail version;
-  const _VersionSection(this.version);
+  final String basePath;
+  final int modelId;
+
+  const _VersionSection({
+    required this.version,
+    required this.basePath,
+    required this.modelId,
+  });
 
   @override
   State<_VersionSection> createState() => _VersionSectionState();
@@ -190,7 +220,27 @@ class _VersionSection extends StatefulWidget {
 
 class _VersionSectionState extends State<_VersionSection> {
   int _currentImage = 0;
+  int _noteRefreshCounter = 0;
   final ScrollController _thumbnailScrollCtrl = ScrollController();
+
+  Future<void> _openNoteFile(String path) async {
+    final file = File(path);
+    if (!file.existsSync()) {
+      file.createSync(recursive: true);
+    }
+    await _openPath(path);
+  }
+
+  Future<void> _openPath(String path) async {
+    final fixed = path.replaceAll('/', '\\');
+    if (Platform.isWindows) {
+      await Process.run('explorer', [fixed]);
+    } else if (Platform.isMacOS) {
+      await Process.run('open', [fixed]);
+    } else {
+      await Process.run('xdg-open', [fixed]);
+    }
+  }
 
   @override
   void dispose() {
@@ -299,16 +349,87 @@ class _VersionSectionState extends State<_VersionSection> {
         _infoRow('Base Model', v.baseModel),
         _infoRow('NSFW Level', '${v.nsfwLevel}'),
         if (v.createdAt != null) _infoRow('Published', v.createdAt!),
-        if (v.description != null && v.description!.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(v.description!, style: theme.textTheme.bodyMedium),
-        ],
+        if (v.modelDescription != null && v.modelDescription!.isNotEmpty)
+          _DescriptionPanel(
+            title: 'About this model',
+            html: sanitizeHtml(v.modelDescription!),
+          ),
+        if (v.description != null && v.description!.isNotEmpty)
+          _DescriptionPanel(
+            title: 'About this version',
+            html: sanitizeHtml(v.description!),
+          ),
+        if (v.trainedWords.isNotEmpty)
+          _TriggerWordsPanel(words: v.trainedWords),
         const SizedBox(height: 16),
         if (v.files.isNotEmpty) ...[
-          Text('Files', style: theme.textTheme.titleMedium),
+          Row(
+            children: [
+              Text('Files', style: theme.textTheme.titleMedium),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.folder_open, size: 20),
+                tooltip: 'Open in Explorer',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _openPath(
+                  getFilesDir(
+                    widget.basePath,
+                    v.typeName,
+                    widget.modelId,
+                    v.id,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           ...v.files.map((f) => _FileRow(file: f)),
+          const SizedBox(height: 16),
         ],
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Text('Notes', style: theme.textTheme.titleMedium),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 20),
+              tooltip: 'Refresh notes',
+              visualDensity: VisualDensity.compact,
+              onPressed: () => setState(() => _noteRefreshCounter++),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              icon: const Icon(Icons.edit, size: 16),
+              label: const Text('Edit model note'),
+              onPressed: () => _openNoteFile(
+                getUserCustomModelNotePath(widget.basePath, widget.modelId),
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.edit_note, size: 16),
+              label: const Text('Edit version note'),
+              onPressed: () => _openNoteFile(
+                getUserCustomVersionNotePath(
+                  widget.basePath,
+                  widget.modelId,
+                  v.id,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        MarkdownNoteViewer(
+          key: ValueKey(_noteRefreshCounter),
+          basePath: widget.basePath,
+          modelId: widget.modelId,
+          modelVersionId: v.id,
+        ),
       ],
     );
   }
@@ -488,6 +609,124 @@ class _VersionSectionState extends State<_VersionSection> {
 }
 
 // ────────────────────────────────────────────────────────
+// Collapsible trigger-words panel
+// ────────────────────────────────────────────────────────
+
+class _TriggerWordsPanel extends StatefulWidget {
+  final List<String> words;
+
+  const _TriggerWordsPanel({required this.words});
+
+  @override
+  State<_TriggerWordsPanel> createState() => _TriggerWordsPanelState();
+}
+
+class _TriggerWordsPanelState extends State<_TriggerWordsPanel> {
+  bool _expanded = true;
+
+  void _copyAll() {
+    Clipboard.setData(ClipboardData(text: widget.words.join(', ')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Trigger words copied')));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        title: const Text(
+          'Trigger Words',
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        initiallyExpanded: true,
+        onExpansionChanged: (v) => setState(() => _expanded = v),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.copy_all, size: 18),
+              tooltip: 'Copy all',
+              visualDensity: VisualDensity.compact,
+              onPressed: _copyAll,
+            ),
+            Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+          ],
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: widget.words
+                  .map(
+                    (w) => ActionChip(
+                      label: Text(w),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: w));
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text('Copied: $w')));
+                      },
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────
+// Collapsible HTML description panel
+// ────────────────────────────────────────────────────────
+
+class _DescriptionPanel extends StatefulWidget {
+  final String title;
+  final String html;
+
+  const _DescriptionPanel({required this.title, required this.html});
+
+  @override
+  State<_DescriptionPanel> createState() => _DescriptionPanelState();
+}
+
+class _DescriptionPanelState extends State<_DescriptionPanel> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        title: Text(
+          widget.title,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        initiallyExpanded: true,
+        onExpansionChanged: (v) => setState(() => _expanded = v),
+        trailing: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: HtmlWidget(
+              widget.html,
+              textStyle: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ────────────────────────────────────────────────────────
 // File row with actions
 // ────────────────────────────────────────────────────────
 
@@ -580,16 +819,24 @@ class _FullscreenViewer extends StatelessWidget {
 // ────────────────────────────────────────────────────────
 
 class _VersionDetail {
+  final int id;
   final String name;
   final String baseModel;
+  final String typeName;
+  final String? modelDescription;
+  final List<String> trainedWords;
   final int nsfwLevel;
   final String? createdAt;
   final String? description;
   final List<_MediaItem> images;
   final List<_FileItem> files;
   const _VersionDetail({
+    required this.id,
     required this.name,
     required this.baseModel,
+    required this.typeName,
+    this.modelDescription,
+    this.trainedWords = const [],
     required this.nsfwLevel,
     this.createdAt,
     this.description,
