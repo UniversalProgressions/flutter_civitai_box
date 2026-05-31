@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../../civitai_api/models/enums.dart';
 import '../../db/database.dart';
+import '../../db/dao/saved_search_dao.dart';
 import '../../db/dao/tag_dao.dart';
 
 /// Filter state passed back from the panel.
@@ -50,6 +52,24 @@ class ModelFilters {
       nsfw: clearNsfw ? null : (nsfw ?? this.nsfw),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    if (query != null) 'query': query,
+    if (username != null) 'username': username,
+    'types': types,
+    'baseModels': baseModels,
+    'tags': tags,
+    if (nsfw != null) 'nsfw': nsfw,
+  };
+
+  static ModelFilters fromJson(Map<String, dynamic> json) => ModelFilters(
+    query: json['query'] as String?,
+    username: json['username'] as String?,
+    types: List<String>.from(json['types'] ?? []),
+    baseModels: List<String>.from(json['baseModels'] ?? []),
+    tags: List<String>.from(json['tags'] ?? []),
+    nsfw: json['nsfw'] as bool?,
+  );
 }
 
 /// Bottom sheet with search and filter controls.
@@ -83,6 +103,10 @@ class _FilterPanelState extends State<FilterPanel> {
   final List<String> _selectedTags = [];
   bool? _nsfw;
 
+  // Saved search
+  List<Map<String, Object?>> _savedSearches = [];
+  String? _selectedPresetName;
+
   static final _typeOptions = ModelType.values.map((e) => e.value).toList();
   static final _baseModelOptions = BaseModel.values
       .map((e) => e.value)
@@ -100,6 +124,7 @@ class _FilterPanelState extends State<FilterPanel> {
     _tagCtrl = TextEditingController();
     _selectedTags.addAll(widget.initial.tags);
     _nsfw = widget.initial.nsfw;
+    _loadSavedSearches();
     _typeFocus.addListener(() {
       if (_typeFocus.hasFocus) {
         _showAllOptions(_typeOptions, _selectedTypes, _typeSuggestions);
@@ -185,6 +210,117 @@ class _FilterPanelState extends State<FilterPanel> {
     setState(() => _selectedTags.remove(tag));
   }
 
+  // ---------------------------------------------------------------------------
+  // Saved search
+  // ---------------------------------------------------------------------------
+
+  Future<void> _loadSavedSearches() async {
+    const dao = SavedSearchDao();
+    final rows = await dao.getAll();
+    if (mounted) setState(() => _savedSearches = rows);
+  }
+
+  ModelFilters _currentFilters() => ModelFilters(
+    query: _queryCtrl.text.trim().isEmpty ? null : _queryCtrl.text.trim(),
+    username: _usernameCtrl.text.trim().isEmpty
+        ? null
+        : _usernameCtrl.text.trim(),
+    types: _selectedTypes,
+    baseModels: _selectedBaseModels,
+    tags: _selectedTags,
+    nsfw: _nsfw,
+  );
+
+  Future<void> _savePreset() async {
+    final nameCtrl = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Save Search Preset'),
+        content: TextField(
+          controller: nameCtrl,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'e.g. My LORAs',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, nameCtrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+
+    const dao = SavedSearchDao();
+    await dao.upsert(name, jsonEncode(_currentFilters().toJson()));
+    await _loadSavedSearches();
+    setState(() => _selectedPresetName = name);
+  }
+
+  Future<void> _loadPreset(String name) async {
+    const dao = SavedSearchDao();
+    final row = await dao.getByName(name);
+    if (row == null) return;
+    final json = row['json'] as String;
+    final filters = ModelFilters.fromJson(
+      jsonDecode(json) as Map<String, dynamic>,
+    );
+    setState(() {
+      _selectedPresetName = name;
+      _queryCtrl.text = filters.query ?? '';
+      _usernameCtrl.text = filters.username ?? '';
+      _selectedTypes
+        ..clear()
+        ..addAll(filters.types);
+      _selectedBaseModels
+        ..clear()
+        ..addAll(filters.baseModels);
+      _selectedTags
+        ..clear()
+        ..addAll(filters.tags);
+      _nsfw = filters.nsfw;
+    });
+  }
+
+  Future<void> _deletePreset(String name) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Preset'),
+        content: Text('Delete "$name"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    const dao = SavedSearchDao();
+    await dao.deleteByName(name);
+    await _loadSavedSearches();
+    if (_selectedPresetName == name) {
+      setState(() => _selectedPresetName = null);
+    }
+  }
+
   void _apply() {
     widget.onApply(
       ModelFilters(
@@ -221,6 +357,66 @@ class _FilterPanelState extends State<FilterPanel> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text('Filters', style: Theme.of(context).textTheme.titleLarge),
+            if (_savedSearches.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      value:
+                          _savedSearches.any(
+                            (s) => s['name'] == _selectedPresetName,
+                          )
+                          ? _selectedPresetName
+                          : null,
+                      hint: const Text('Saved presets…'),
+                      isExpanded: true,
+                      isDense: true,
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: _savedSearches
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s['name'] as String,
+                              child: Text(
+                                s['name'] as String,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) _loadPreset(v);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.save_outlined),
+                    tooltip: 'Save current filters',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _currentFilters().hasActiveFilters
+                        ? _savePreset
+                        : null,
+                  ),
+                  if (_selectedPresetName != null)
+                    IconButton(
+                      icon: Icon(
+                        Icons.delete_outline,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      tooltip: 'Delete "$_selectedPresetName"',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _deletePreset(_selectedPresetName!),
+                    ),
+                ],
+              ),
+            ],
             const SizedBox(height: 12),
             TextField(
               controller: _queryCtrl,
