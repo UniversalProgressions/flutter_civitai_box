@@ -6,6 +6,7 @@ import 'settings/settings.dart';
 import 'ui/download/download_page.dart';
 import 'ui/local_models/local_models_page.dart';
 import 'ui/settings/settings_page.dart';
+import 'ui/stats/stats_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -91,6 +92,7 @@ class _MainShellState extends State<MainShell> {
   final _pages = const <Widget>[
     LocalModelsPage(),
     DownloadPage(),
+    StatsPage(),
     SettingsPage(),
   ];
 
@@ -110,6 +112,7 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.cloud_download),
             label: 'Download',
           ),
+          NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Stats'),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),

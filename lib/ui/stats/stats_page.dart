@@ -1,0 +1,708 @@
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
+
+import '../../db/database.dart';
+
+/// Statistics dashboard showing aggregated model information.
+class StatsPage extends StatefulWidget {
+  const StatsPage({super.key});
+
+  @override
+  State<StatsPage> createState() => _StatsPageState();
+}
+
+class _StatsPageState extends State<StatsPage> {
+  bool _loading = true;
+
+  // Overview
+  int _totalModels = 0;
+  int _totalVersions = 0;
+  double _totalSizeMB = 0;
+
+  // Type distribution
+  List<_NameCount> _typeDistribution = [];
+
+  // Base model distribution
+  List<_NameCount> _baseModelDistribution = [];
+
+  // NSFW
+  int _sfwCount = 0;
+  int _nsfwCount = 0;
+
+  // Top creators
+  List<_NameCount> _topCreators = [];
+
+  // Top tags
+  List<_NameCount> _topTags = [];
+
+  // Recent updates
+  List<_RecentModel> _recentUpdates = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAll();
+  }
+
+  Future<void> _fetchAll() async {
+    final db = (await CivitaiDatabase.instance).db;
+
+    final results = await Future.wait([
+      // Overview
+      db.rawQuery('SELECT COUNT(*) as cnt FROM model'),
+      db.rawQuery('SELECT COUNT(*) as cnt FROM model_version'),
+      db.rawQuery(
+        'SELECT COALESCE(SUM(size_kb), 0) as total FROM model_version_file',
+      ),
+      // Type distribution
+      db.rawQuery('''
+        SELECT mt.name, COUNT(*) as cnt
+        FROM model m
+        JOIN model_type mt ON mt.id = m.type_id
+        GROUP BY mt.name
+        ORDER BY cnt DESC
+      '''),
+      // Base model distribution
+      db.rawQuery('''
+        SELECT bm.name, COUNT(DISTINCT mv.model_id) as cnt
+        FROM model_version mv
+        JOIN base_model bm ON bm.id = mv.base_model_id
+        GROUP BY bm.name
+        ORDER BY cnt DESC
+      '''),
+      // NSFW counts
+      db.rawQuery('SELECT nsfw, COUNT(*) as cnt FROM model GROUP BY nsfw'),
+      // Top creators
+      db.rawQuery('''
+        SELECT c.username as name, COUNT(*) as cnt
+        FROM model m
+        JOIN creator c ON c.id = m.creator_id
+        GROUP BY c.username
+        ORDER BY cnt DESC
+        LIMIT 10
+      '''),
+      // Top tags
+      db.rawQuery('''
+        SELECT t.name, COUNT(*) as cnt
+        FROM model_tags mt
+        JOIN tag t ON t.id = mt.tag_id
+        GROUP BY t.name
+        ORDER BY cnt DESC
+        LIMIT 15
+      '''),
+      // Recent updates
+      db.rawQuery('''
+        SELECT m.id, m.name, m.updated_at, c.username
+        FROM model m
+        LEFT JOIN creator c ON c.id = m.creator_id
+        ORDER BY m.updated_at DESC
+        LIMIT 10
+      '''),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _totalModels = (results[0].first['cnt'] as int?) ?? 0;
+      _totalVersions = (results[1].first['cnt'] as int?) ?? 0;
+      _totalSizeMB =
+          ((results[2].first['total'] as num?)?.toDouble() ?? 0) /
+          1024; // KB → MB
+
+      _typeDistribution = _parseNameCount(results[3]);
+
+      _baseModelDistribution = _parseNameCount(results[4]);
+
+      for (final row in results[5]) {
+        final nsfw = row['nsfw'] == 1;
+        final cnt = row['cnt'] as int;
+        if (nsfw) {
+          _nsfwCount = cnt;
+        } else {
+          _sfwCount = cnt;
+        }
+      }
+
+      _topCreators = _parseNameCount(results[6]);
+
+      _topTags = _parseNameCount(results[7]);
+
+      _recentUpdates = results[8].map((r) {
+        return _RecentModel(
+          id: r['id'] as int,
+          name: r['name'] as String,
+          username: r['username'] as String?,
+          updatedAt: r['updated_at'] as String,
+        );
+      }).toList();
+
+      _loading = false;
+    });
+  }
+
+  List<_NameCount> _parseNameCount(dynamic result) {
+    return (result as List).map((r) {
+      return _NameCount(
+        name: r['name'] as String? ?? 'Unknown',
+        count: r['cnt'] as int,
+      );
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(title: const Text('Statistics')),
+      body: RefreshIndicator(
+        onRefresh: _fetchAll,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            _buildOverviewCards(theme),
+            const SizedBox(height: 24),
+            _buildSectionTitle('Model Type Distribution'),
+            const SizedBox(height: 8),
+            _buildHorizontalBarChart(_typeDistribution, theme),
+            const SizedBox(height: 24),
+            _buildSectionTitle('Base Model Distribution'),
+            const SizedBox(height: 8),
+            _buildPieChart(_baseModelDistribution, theme),
+            const SizedBox(height: 24),
+            _buildSectionTitle('NSFW Ratio'),
+            const SizedBox(height: 8),
+            _buildNsfwPieChart(theme),
+            const SizedBox(height: 24),
+            _buildSectionTitle('Top Creators'),
+            const SizedBox(height: 8),
+            _buildRankedList(_topCreators, theme),
+            const SizedBox(height: 24),
+            _buildSectionTitle('Top Tags'),
+            const SizedBox(height: 8),
+            _buildHorizontalBarChart(_topTags, theme),
+            const SizedBox(height: 24),
+            _buildSectionTitle('Recent Updates'),
+            const SizedBox(height: 8),
+            _buildRecentUpdates(theme),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Overview Cards
+  // ---------------------------------------------------------------------------
+  Widget _buildOverviewCards(ThemeData theme) {
+    return Row(
+      children: [
+        Expanded(
+          child: _OverviewCard(
+            icon: Icons.model_training,
+            label: 'Models',
+            value: _totalModels.toString(),
+            color: theme.colorScheme.primary,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _OverviewCard(
+            icon: Icons.layers,
+            label: 'Versions',
+            value: _totalVersions.toString(),
+            color: theme.colorScheme.secondary,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: _OverviewCard(
+            icon: Icons.storage,
+            label: 'Size',
+            value: _formatSize(_totalSizeMB),
+            color: theme.colorScheme.tertiary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatSize(double mb) {
+    if (mb >= 1024) return '${(mb / 1024).toStringAsFixed(1)} GB';
+    return '${mb.toStringAsFixed(0)} MB';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Horizontal Bar Chart – native Flutter rows (no overlap)
+  // ---------------------------------------------------------------------------
+  Widget _buildHorizontalBarChart(List<_NameCount> data, ThemeData theme) {
+    if (data.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('No data')),
+        ),
+      );
+    }
+
+    // Take top 12 for readability
+    final items = data.length > 12 ? data.sublist(0, 12) : data;
+    final maxCount = items.first.count.toDouble();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        child: Column(
+          children: items.asMap().entries.map((e) {
+            final ratio = maxCount > 0 ? e.value.count / maxCount : 0.0;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                children: [
+                  // Label
+                  SizedBox(
+                    width: 100,
+                    child: Text(
+                      e.value.name,
+                      style: const TextStyle(fontSize: 12),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Bar
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: ratio,
+                        minHeight: 18,
+                        backgroundColor:
+                            theme.colorScheme.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation(
+                          theme.colorScheme.primary.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Count
+                  SizedBox(
+                    width: 36,
+                    child: Text(
+                      '${e.value.count}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: theme.colorScheme.primary,
+                      ),
+                      textAlign: TextAlign.right,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pie Chart (fl_chart)
+  // ---------------------------------------------------------------------------
+  Widget _buildPieChart(List<_NameCount> data, ThemeData theme) {
+    if (data.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('No data')),
+        ),
+      );
+    }
+
+    final items = data.length > 8 ? data.sublist(0, 8) : data;
+    final colors = _generateColors(items.length);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            SizedBox(
+              height: 200,
+              child: PieChart(
+                PieChartData(
+                  sections: items.asMap().entries.map((e) {
+                    return PieChartSectionData(
+                      value: e.value.count.toDouble(),
+                      color: colors[e.key],
+                      title: '${e.value.count}',
+                      radius: 60,
+                      titleStyle: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    );
+                  }).toList(),
+                  sectionsSpace: 2,
+                  centerSpaceRadius: 0,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              children: items.asMap().entries.map((e) {
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: colors[e.key],
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${e.value.name} (${e.value.count})',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // NSFW Ratio – stacked bar (clearer than pie)
+  // ---------------------------------------------------------------------------
+  Widget _buildNsfwPieChart(ThemeData theme) {
+    final total = _sfwCount + _nsfwCount;
+    if (total == 0) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('No data')),
+        ),
+      );
+    }
+
+    final sfwRatio = _sfwCount / total;
+    final nsfwRatio = _nsfwCount / total;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            // Stacked ratio bar
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                height: 32,
+                child: Row(
+                  children: [
+                    if (sfwRatio > 0)
+                      Expanded(
+                        flex: (_sfwCount * 1000).round(),
+                        child: Container(color: Colors.green.shade400),
+                      ),
+                    if (nsfwRatio > 0)
+                      Expanded(
+                        flex: (_nsfwCount * 1000).round(),
+                        child: Container(color: Colors.red.shade400),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Legend + percentages
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _legendDot(Colors.green.shade400, 'SFW'),
+                const SizedBox(width: 24),
+                _legendDot(Colors.red.shade400, 'NSFW'),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'SFW ${(sfwRatio * 100).toStringAsFixed(1)}%  ·  NSFW ${(nsfwRatio * 100).toStringAsFixed(1)}%',
+              style: const TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$_sfwCount SFW  /  $_nsfwCount NSFW  ($total total)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 12)),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ranked List (Top Creators)
+  // ---------------------------------------------------------------------------
+  Widget _buildRankedList(List<_NameCount> data, ThemeData theme) {
+    if (data.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('No data')),
+        ),
+      );
+    }
+
+    return Card(
+      child: Column(
+        children: data.asMap().entries.map((e) {
+          final rank = e.key + 1;
+          final item = e.value;
+          final maxCount = data.first.count.toDouble();
+          final ratio = item.count / maxCount;
+
+          Color rankColor;
+          if (rank == 1) {
+            rankColor = Colors.amber.shade700;
+          } else if (rank == 2) {
+            rankColor = Colors.grey.shade500;
+          } else if (rank == 3) {
+            rankColor = Colors.brown.shade400;
+          } else {
+            rankColor = Colors.grey;
+          }
+
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: rankColor.withValues(alpha: 0.2),
+              radius: 16,
+              child: Text(
+                '$rank',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: rankColor,
+                ),
+              ),
+            ),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(item.name, style: const TextStyle(fontSize: 14)),
+                ),
+                Text(
+                  '${item.count}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: ratio,
+                  minHeight: 4,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Recent Updates
+  // ---------------------------------------------------------------------------
+  Widget _buildRecentUpdates(ThemeData theme) {
+    if (_recentUpdates.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: Text('No data')),
+        ),
+      );
+    }
+
+    return Card(
+      child: Column(
+        children: _recentUpdates.map((m) {
+          return ListTile(
+            leading: CircleAvatar(
+              backgroundColor: theme.colorScheme.primaryContainer,
+              child: Icon(
+                Icons.update,
+                size: 18,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
+            ),
+            title: Text(m.name, style: const TextStyle(fontSize: 14)),
+            subtitle: Text(
+              m.username != null
+                  ? 'by ${m.username}  ·  ${_formatDate(m.updatedAt)}'
+                  : _formatDate(m.updatedAt),
+              style: const TextStyle(fontSize: 12),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  String _formatDate(String iso) {
+    try {
+      final dt = DateTime.parse(iso);
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return iso;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Section Title
+  // ---------------------------------------------------------------------------
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: TextStyle(
+        fontSize: 16,
+        fontWeight: FontWeight.w600,
+        color: Theme.of(context).colorScheme.onSurface,
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Color generation
+  // ---------------------------------------------------------------------------
+  List<Color> _generateColors(int count) {
+    const base = [
+      Color(0xFF4CAF50),
+      Color(0xFF2196F3),
+      Color(0xFFFF9800),
+      Color(0xFF9C27B0),
+      Color(0xFF00BCD4),
+      Color(0xFFE91E63),
+      Color(0xFF3F51B5),
+      Color(0xFFFF5722),
+    ];
+    if (count <= base.length) return base.sublist(0, count);
+    return List.generate(count, (i) {
+      final hue = (i * 360 / count) % 360;
+      return HSLColor.fromAHSL(0.7, hue.toDouble(), 0.6, 0.6).toColor();
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Data classes
+// ---------------------------------------------------------------------------
+class _NameCount {
+  final String name;
+  final int count;
+  const _NameCount({required this.name, required this.count});
+}
+
+class _RecentModel {
+  final int id;
+  final String name;
+  final String? username;
+  final String updatedAt;
+  const _RecentModel({
+    required this.id,
+    required this.name,
+    this.username,
+    required this.updatedAt,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Overview Card
+// ---------------------------------------------------------------------------
+class _OverviewCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _OverviewCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 8),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

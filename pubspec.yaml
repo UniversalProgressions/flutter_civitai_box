@@ -54,6 +54,7 @@ dependencies:
   markdown: ^7.3.1
   sanitize_html: ^2.1.0
   flutter_widget_from_html_core: ^0.17.2
+  fl_chart: ^1.2.0
 
 dev_dependencies:
   flutter_test:
