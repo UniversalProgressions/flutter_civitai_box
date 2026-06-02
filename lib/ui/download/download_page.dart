@@ -1,10 +1,19 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../../civitai_api/civitai_api.dart';
 import '../../db/db.dart';
+import '../../services/download/download_queue.dart';
+import '../../services/download/download_task.dart';
+import '../../services/file_layout.dart';
+import '../../services/logger.dart';
 import '../../services/model_refresh_bus.dart';
 import '../../settings/settings.dart';
 import '../local_models/model_detail_page.dart';
+import 'widgets/download_batch_card.dart';
 
 /// Page for downloading CivitAI models by ID.
 ///
@@ -25,15 +34,35 @@ class _DownloadPageState extends State<DownloadPage> {
   bool _loading = false;
   String? _status;
   bool _isError = false;
+  String? _errorDetails;
 
   // Fetched data
   Model? _model;
   List<ModelVersionEndpointData> _versionDetails = [];
   final Set<int> _selectedVersionIds = {};
 
+  // Queue state
+  DownloadQueueState _queueState = const DownloadQueueState(
+    tasks: [],
+    totalBatches: 0,
+    completedBatches: 0,
+  );
+  StreamSubscription<DownloadQueueState>? _queueSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _queueSub = DownloadQueue.instance.stateStream.listen((s) {
+      if (mounted) setState(() => _queueState = s);
+    });
+    // Pull initial state — init() in main() may have emitted before subscribe
+    _queueState = DownloadQueue.instance.currentState;
+  }
+
   @override
   void dispose() {
     _idCtrl.dispose();
+    _queueSub?.cancel();
     super.dispose();
   }
 
@@ -77,31 +106,37 @@ class _DownloadPageState extends State<DownloadPage> {
         case _FetchMode.versionId:
           await _fetchByVersionId(api, id);
       }
-    } on CivitaiApiException catch (e) {
+    } on CivitaiApiException catch (e, st) {
+      logger.error('API error fetching model', e, st);
       if (mounted) {
         setState(() {
           if (e.statusCode == 404) {
             _status =
                 'Not found. Check the ID or set an API key in Settings for NSFW/private models.';
           } else {
-            _status = 'API error (${e.statusCode})';
+            _status = 'API error (${e.statusCode}): ${e.message}';
           }
+          _errorDetails = null;
           _isError = true;
           _loading = false;
         });
       }
-    } on CivitaiNetworkException catch (e) {
+    } on CivitaiNetworkException catch (e, st) {
+      logger.error('Network error fetching model', e, st);
       if (mounted) {
         setState(() {
           _status = 'Network error: ${e.message}';
+          _errorDetails = null;
           _isError = true;
           _loading = false;
         });
       }
-    } catch (e) {
+    } catch (e, st) {
+      logger.error('Unexpected error during fetch', e, st);
       if (mounted) {
         setState(() {
-          _status = 'Unexpected error: $e';
+          _status = _buildErrorSummary(e);
+          _errorDetails = _buildErrorDetails(e, st);
           _isError = true;
           _loading = false;
         });
@@ -153,47 +188,189 @@ class _DownloadPageState extends State<DownloadPage> {
   }
 
   // ---------------------------------------------------------------------------
-  // Upsert & Navigate
+  // Start Download
   // ---------------------------------------------------------------------------
 
-  Future<void> _upsertAndNavigate() async {
-    if (_model == null) return;
+  Future<void> _startDownload() async {
+    if (_model == null || _selectedVersionIds.isEmpty) return;
     final model = _model!;
 
     setState(() {
       _loading = true;
-      _status = 'Saving to database…';
+      _status = 'Preparing download…';
     });
 
+    final svc = await SettingsService.getInstance();
+    final basePath = svc.settingsOrNull?.basePath ?? '';
+
+    // Write model-level JSON to disk (retain all fields including modelVersions)
+    await _writeModelJson(basePath, model.type, model.id, model.toJson());
+
+    // Upsert model + selected versions to DB
     await _upsertModel(model);
     for (final vd in _versionDetails) {
+      if (!_selectedVersionIds.contains(vd.id)) continue;
       await _upsertVersion(vd, model);
     }
+
+    // Create download tasks for each selected version
+    for (final vd in _versionDetails) {
+      if (!_selectedVersionIds.contains(vd.id)) continue;
+
+      final batchId =
+          '${model.id}-${vd.id}-${DateTime.now().millisecondsSinceEpoch}';
+
+      // Write version-level JSON to disk
+      await _writeVersionJson(
+        basePath,
+        model.type,
+        model.id,
+        vd.id,
+        vd.toJson(),
+      );
+
+      // API JSON tasks (already written, marked completed)
+      final apiJsonTasks = [
+        DownloadTask(
+          id: '${batchId}-json-model',
+          batchId: batchId,
+          modelId: model.id,
+          modelVersionId: vd.id,
+          fileName: '${model.id}.api-info.json',
+          fileSizeKb: 0,
+          downloadUrl: '',
+          targetPath: getModelIdApiInfoJsonPath(basePath, model.type, model.id),
+          fileType: DownloadFileType.apiJson,
+          status: DownloadTaskStatus.completed,
+          progress: 1.0,
+          createdAt: DateTime.now().toIso8601String(),
+          updatedAt: DateTime.now().toIso8601String(),
+        ),
+        DownloadTask(
+          id: '${batchId}-json-version',
+          batchId: batchId,
+          modelId: model.id,
+          modelVersionId: vd.id,
+          fileName: '${vd.id}.api-info.json',
+          fileSizeKb: 0,
+          downloadUrl: '',
+          targetPath: getModelVersionApiInfoJsonPath(
+            basePath,
+            model.type,
+            model.id,
+            vd.id,
+          ),
+          fileType: DownloadFileType.apiJson,
+          status: DownloadTaskStatus.completed,
+          progress: 1.0,
+          createdAt: DateTime.now().toIso8601String(),
+          updatedAt: DateTime.now().toIso8601String(),
+        ),
+      ];
+
+      // Model files
+      final modelTasks = vd.files.where((f) => f.type == 'Model').map((f) {
+        final filesDir = getFilesDir(basePath, model.type, model.id, vd.id);
+        return DownloadTask(
+          id: '${batchId}-f-${f.id}',
+          batchId: batchId,
+          modelId: model.id,
+          modelVersionId: vd.id,
+          fileName: f.name,
+          fileSizeKb: f.sizeKB,
+          downloadUrl: f.downloadUrl,
+          targetPath: '$filesDir/${f.name}',
+          fileType: DownloadFileType.model,
+          createdAt: DateTime.now().toIso8601String(),
+          updatedAt: DateTime.now().toIso8601String(),
+        );
+      }).toList();
+
+      // Media files
+      final mediaTasks = vd.images
+          .where((img) => (img.type ?? 'image') == 'image')
+          .map((img) {
+            final imageId = extractIdFromImageUrl(img.url) ?? 0;
+            final ext = _extensionFromUrl(img.url);
+            final mediaDir = getMediaDir(basePath, model.type, model.id, vd.id);
+            return DownloadTask(
+              id: '${batchId}-m-$imageId',
+              batchId: batchId,
+              modelId: model.id,
+              modelVersionId: vd.id,
+              fileName: '$imageId$ext',
+              fileSizeKb: 0,
+              downloadUrl: img.url,
+              targetPath: '$mediaDir/$imageId$ext',
+              fileType: DownloadFileType.media,
+              createdAt: DateTime.now().toIso8601String(),
+              updatedAt: DateTime.now().toIso8601String(),
+            );
+          })
+          .toList();
+
+      await DownloadQueue.instance.enqueueBatch(
+        batchId: batchId,
+        apiJsonTasks: apiJsonTasks,
+        modelTasks: modelTasks,
+        mediaTasks: mediaTasks,
+      );
+    }
+
     ModelRefreshBus.instance.notify();
 
     if (mounted) {
       setState(() {
         _loading = false;
         _status = null;
+        _model = null;
+        _versionDetails = [];
+        _selectedVersionIds.clear();
+        _idCtrl.clear();
       });
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ModelDetailPage(
-            modelId: model.id,
-            modelName: model.name,
-            typeName: model.type,
-          ),
-        ),
-      );
-      if (mounted) {
-        setState(() {
-          _model = null;
-          _versionDetails = [];
-          _selectedVersionIds.clear();
-          _idCtrl.clear();
-        });
-      }
     }
+  }
+
+  String _extensionFromUrl(String url) {
+    final uri = Uri.tryParse(url);
+    final path = uri?.path ?? url;
+    final dotIdx = path.lastIndexOf('.');
+    if (dotIdx == -1) return '.jpeg';
+    final ext = path.substring(dotIdx);
+    final qIdx = ext.indexOf('?');
+    return qIdx == -1 ? ext : ext.substring(0, qIdx);
+  }
+
+  // ── API JSON writers ──
+
+  Future<void> _writeModelJson(
+    String basePath,
+    String modelType,
+    int modelId,
+    Map<String, dynamic> json,
+  ) async {
+    final filePath = getModelIdApiInfoJsonPath(basePath, modelType, modelId);
+    final file = File(filePath);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(json));
+  }
+
+  Future<void> _writeVersionJson(
+    String basePath,
+    String modelType,
+    int modelId,
+    int versionId,
+    Map<String, dynamic> json,
+  ) async {
+    final filePath = getModelVersionApiInfoJsonPath(
+      basePath,
+      modelType,
+      modelId,
+      versionId,
+    );
+    final file = File(filePath);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(json));
   }
 
   // ---------------------------------------------------------------------------
@@ -233,7 +410,7 @@ class _DownloadPageState extends State<DownloadPage> {
         'nsfwLevel': img.nsfwLevel,
         'width': img.width,
         'height': img.height,
-        'hash': img.hash,
+        'hash': img.hash ?? '',
         'type': img.type,
       };
     }).toList();
@@ -291,14 +468,20 @@ class _DownloadPageState extends State<DownloadPage> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Download')),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: _buildInputSection(theme),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 500),
+              child: _buildInputSection(theme),
+            ),
           ),
-        ),
+          if (_queueState.batches.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            _buildQueueSection(theme),
+          ],
+        ],
       ),
     );
   }
@@ -395,13 +578,13 @@ class _DownloadPageState extends State<DownloadPage> {
                   ],
                 ),
               ),
-              FilledButton.tonalIcon(
-                onPressed: _upsertAndNavigate,
-                icon: const Icon(Icons.open_in_new, size: 18),
+              FilledButton.icon(
+                onPressed: selectedCount > 0 ? _startDownload : null,
+                icon: const Icon(Icons.download, size: 18),
                 label: Text(
                   selectedCount > 0
-                      ? 'Detail ($selectedCount selected)'
-                      : 'Detail Page',
+                      ? 'Download ($selectedCount)'
+                      : 'Select versions',
                 ),
               ),
             ],
@@ -523,32 +706,114 @@ class _DownloadPageState extends State<DownloadPage> {
   }
 
   Widget _buildStatusRow(ThemeData theme) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_loading)
-          const Padding(
-            padding: EdgeInsets.only(right: 8),
-            child: SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+        Row(
+          children: [
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(right: 8),
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else
+              Icon(
+                _isError ? Icons.error : Icons.check_circle,
+                size: 16,
+                color: _isError ? theme.colorScheme.error : Colors.green,
+              ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _status!,
+                style: TextStyle(
+                  color: _isError ? theme.colorScheme.error : null,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
-          )
-        else
-          Icon(
-            _isError ? Icons.error : Icons.check_circle,
-            size: 16,
-            color: _isError ? theme.colorScheme.error : Colors.green,
-          ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            _status!,
-            style: TextStyle(color: _isError ? theme.colorScheme.error : null),
-          ),
+          ],
         ),
+        if (_errorDetails != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.error.withValues(alpha: 0.3),
+              ),
+            ),
+            child: SelectableText(
+              _errorDetails!,
+              style: TextStyle(
+                fontSize: 11,
+                fontFamily: 'monospace',
+                color: theme.colorScheme.onErrorContainer,
+              ),
+            ),
+          ),
+        ],
       ],
     );
+  }
+
+  String _buildErrorSummary(Object e) {
+    final msg = e.toString();
+
+    // TypeError / _CastError: extract types
+    if (msg.contains('is not a subtype of')) {
+      final match = RegExp(
+        r"type '(.+?)' is not a subtype of type '(.+?)'",
+      ).firstMatch(msg);
+      if (match != null) {
+        return 'Field mismatch: expected ${match.group(2)}, got ${match.group(1)}';
+      }
+    }
+
+    return msg.length > 120 ? '${msg.substring(0, 120)}…' : msg;
+  }
+
+  String _buildErrorDetails(Object e, StackTrace st) {
+    final buf = StringBuffer();
+    buf.writeln('Error: ${e.runtimeType}');
+    buf.writeln('$e');
+    buf.writeln();
+
+    // Parse stack to find the exact .g.dart location
+    final lines = st.toString().split('\n');
+    String? culpritFrame;
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+
+      // Find the first frame in a .g.dart file (this is the deserialization
+      // code that actually failed)
+      if (trimmed.contains('.g.dart') && culpritFrame == null) {
+        culpritFrame = trimmed;
+      }
+
+      // Show relevant frames: endpoint calls, fetch logic, deserialization
+      if (trimmed.contains('fromJson') ||
+          trimmed.contains('.g.dart') ||
+          trimmed.contains('endpoint') ||
+          trimmed.contains('_fetch')) {
+        buf.writeln(trimmed);
+      }
+    }
+
+    if (culpritFrame != null) {
+      buf.writeln();
+      buf.writeln('→ Culprit: $culpritFrame');
+    }
+
+    return buf.toString();
   }
 
   String _formatSize(double sizeKB) {
@@ -558,5 +823,69 @@ class _DownloadPageState extends State<DownloadPage> {
       return '${(sizeKB / 1_000).toStringAsFixed(1)} MB';
     }
     return '${sizeKB.toStringAsFixed(0)} KB';
+  }
+
+  // ── Queue Section ──
+
+  Widget _buildQueueSection(ThemeData theme) {
+    final batches = _queueState.batches.entries.toList();
+    if (batches.isEmpty) return const SizedBox.shrink();
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 500),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('Queue', style: theme.textTheme.titleSmall),
+              const Spacer(),
+              if (_queueState.activeBatches.any(
+                (e) => e.value.any(
+                  (t) => t.status == DownloadTaskStatus.downloading,
+                ),
+              ))
+                TextButton(
+                  onPressed: () => DownloadQueue.instance.pause(),
+                  child: const Text('Pause', style: TextStyle(fontSize: 13)),
+                )
+              else if (_queueState.activeBatches.any(
+                (e) =>
+                    e.value.any((t) => t.status == DownloadTaskStatus.pending),
+              ))
+                TextButton(
+                  onPressed: () => DownloadQueue.instance.resume(),
+                  child: const Text('Resume', style: TextStyle(fontSize: 13)),
+                ),
+              if (_queueState.completedBatchList.isNotEmpty)
+                TextButton(
+                  onPressed: () => DownloadQueue.instance.clearHistory(),
+                  child: const Text(
+                    'Clear done',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ..._queueState.activeBatches.map(
+            (e) => DownloadBatchCard(batchId: e.key, tasks: e.value),
+          ),
+          if (_queueState.completedBatchList.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Completed',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+              ),
+            ),
+            const SizedBox(height: 4),
+            ..._queueState.completedBatchList.map(
+              (e) => DownloadBatchCard(batchId: e.key, tasks: e.value),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }

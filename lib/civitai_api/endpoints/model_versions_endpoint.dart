@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../services/logger.dart';
 import '../civitai_api_exception.dart';
 import '../models/model_version.dart';
 import '../utils.dart';
@@ -19,6 +20,9 @@ class ModelVersionsEndpoint {
       );
     } on DioException catch (e) {
       throw mapDioError(e);
+    } catch (e, st) {
+      logger.error('ModelVersionEndpointData.fromJson failed', e, st);
+      rethrow;
     }
   }
 
@@ -31,6 +35,9 @@ class ModelVersionsEndpoint {
       );
     } on DioException catch (e) {
       throw mapDioError(e);
+    } catch (e, st) {
+      logger.error('ModelVersionEndpointData.fromJson (by-hash) failed', e, st);
+      rethrow;
     }
   }
 

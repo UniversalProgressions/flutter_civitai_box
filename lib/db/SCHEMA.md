@@ -333,6 +333,44 @@ JSON schema:
 
 ---
 
+### 14. `download_task`
+
+Download queue persistence. Each row is one file download within a batch.
+
+| Column               | Type      | Constraints                                              |
+| -------------------- | --------- | -------------------------------------------------------- |
+| `id`                 | `TEXT`    | `PRIMARY KEY` (UUID)                                     |
+| `batch_id`           | `TEXT`    | `NOT NULL` (groups tasks for one ModelVersion)           |
+| `model_id`           | `INTEGER` | `NOT NULL`                                               |
+| `model_version_id`   | `INTEGER` | `NOT NULL`                                               |
+| `file_name`          | `TEXT`    | `NOT NULL`                                               |
+| `file_size_kb`       | `REAL`    | `NOT NULL` (0 for media files with unknown size)         |
+| `download_url`       | `TEXT`    | `NOT NULL` (empty for apiJson)                           |
+| `target_path`        | `TEXT`    | `NOT NULL` (full disk path)                              |
+| `file_type`          | `TEXT`    | `NOT NULL` (`model` / `media` / `apiJson`)               |
+| `status`             | `TEXT`    | `NOT NULL DEFAULT 'pending'`                             |
+| `progress`           | `REAL`    | `NOT NULL DEFAULT 0` (0.0 ~ 1.0)                        |
+| `error_message`      | `TEXT`    | nullable                                                 |
+| `background_task_id` | `TEXT`    | nullable (background_downloader task ID)                 |
+| `created_at`         | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))`                     |
+| `updated_at`         | `TEXT`    | `NOT NULL DEFAULT (datetime('now'))`                     |
+
+**Indexes:** `idx_download_task_batch` on (`batch_id`), `idx_download_task_status` on (`status`).
+
+**File types:**
+
+| `file_type` | Description | Concurrent |
+|-------------|-------------|------------|
+| `apiJson` | Model/version API JSON files (written instantly, not downloaded) | — |
+| `model` | Model weight files (.safetensors, .ckpt) | x2 |
+| `media` | Preview images (.jpeg, .png, .mp4) | x4 |
+
+**Status lifecycle:** `pending` → `downloading` → `completed` / `failed` / `cancelled`.
+
+**Startup restore:** `DownloadQueue.init()` loads tasks with `status IN ('pending','downloading','failed')`.
+
+---
+
 ## Prisma → sqflite Type Mapping
 
 | Prisma Type  | SQLite (sqflite) | Notes                               |

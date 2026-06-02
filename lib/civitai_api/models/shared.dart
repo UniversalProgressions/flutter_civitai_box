@@ -55,8 +55,8 @@ abstract class ModelImage with _$ModelImage {
     required int nsfwLevel,
     required int width,
     required int height,
-    required String hash,
-    required String type,
+    String? hash,
+    String? type,
   }) = _ModelImage;
 
   factory ModelImage.fromJson(Map<String, dynamic> json) =>

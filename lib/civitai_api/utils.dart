@@ -17,8 +17,8 @@ Model modelId2Model(ModelById data) {
         nsfwLevel: img.nsfwLevel,
         width: img.width,
         height: img.height,
-        hash: img.hash,
-        type: img.type,
+        hash: img.hash ?? '',
+        type: img.type ?? 'image',
       );
     }).toList();
 

@@ -9,6 +9,7 @@ import 'package:sanitize_html/sanitize_html.dart';
 import '../../civitai_api/utils.dart';
 import '../../db/db.dart';
 import '../../services/file_layout.dart';
+import '../../services/hash_check_service.dart';
 import '../../settings/settings.dart';
 import 'markdown_note_viewer.dart';
 import 'media_thumbnail.dart';
@@ -223,6 +224,27 @@ class _VersionSectionState extends State<_VersionSection> {
   int _noteRefreshCounter = 0;
   final ScrollController _thumbnailScrollCtrl = ScrollController();
 
+  // Hash check
+  bool _hashChecking = false;
+  HashCheckProgress? _hashProgress;
+
+  Future<void> _startHashCheck() async {
+    setState(() {
+      _hashChecking = true;
+      _hashProgress = null;
+    });
+
+    const service = HashCheckService();
+    await for (final progress in service.checkVersion(
+      modelVersionId: widget.version.id,
+    )) {
+      if (!mounted) return;
+      setState(() => _hashProgress = progress);
+    }
+
+    if (mounted) setState(() => _hashChecking = false);
+  }
+
   Future<void> _openNoteFile(String path) async {
     final file = File(path);
     if (!file.existsSync()) {
@@ -246,6 +268,128 @@ class _VersionSectionState extends State<_VersionSection> {
   void dispose() {
     _thumbnailScrollCtrl.dispose();
     super.dispose();
+  }
+
+  // ── Hash Check for this version ──
+
+  Widget _buildVersionHashCheck(ThemeData theme) {
+    final progress = _hashProgress;
+
+    if (!_hashChecking && progress == null) {
+      return OutlinedButton.icon(
+        onPressed: _startHashCheck,
+        icon: const Icon(Icons.verified_user, size: 16),
+        label: const Text('Check file integrity'),
+        style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+      );
+    }
+
+    if (_hashChecking && progress != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Checking ${progress.checked}/${progress.total}…',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: progress.total > 0 ? progress.checked / progress.total : 0,
+              minHeight: 4,
+            ),
+          ),
+        ],
+      );
+    }
+
+    // Done
+    if (progress != null) {
+      final failed = progress.results
+          .where(
+            (r) =>
+                r.status == HashCheckStatus.mismatch ||
+                r.status == HashCheckStatus.missing,
+          )
+          .toList();
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (progress.mismatched == 0 && progress.missing == 0)
+                const Icon(Icons.verified, color: Colors.green, size: 18)
+              else
+                const Icon(Icons.warning, color: Colors.red, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                '${progress.passed} passed, ${progress.mismatched} mismatch, '
+                '${progress.missing} missing, ${progress.skipped} skipped',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: progress.mismatched == 0 && progress.missing == 0
+                      ? Colors.green
+                      : Colors.red,
+                ),
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: _startHashCheck,
+                child: const Text('Re-check', style: TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+          if (failed.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            ...failed.map(
+              (r) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      r.status == HashCheckStatus.missing
+                          ? Icons.warning_amber
+                          : Icons.close,
+                      size: 14,
+                      color: r.status == HashCheckStatus.missing
+                          ? Colors.orange
+                          : Colors.red,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        r.fileName,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: r.status == HashCheckStatus.missing
+                              ? Colors.orange.shade700
+                              : Colors.red.shade700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   /// Scroll the thumbnail strip to bring the current image into view.
@@ -384,6 +528,9 @@ class _VersionSectionState extends State<_VersionSection> {
           ),
           const SizedBox(height: 8),
           ...v.files.map((f) => _FileRow(file: f)),
+          const SizedBox(height: 12),
+          // ── Hash Check ──
+          _buildVersionHashCheck(theme),
           const SizedBox(height: 16),
         ],
         const SizedBox(height: 16),

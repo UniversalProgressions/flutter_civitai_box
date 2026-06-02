@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../services/logger.dart';
 import '../models/model.dart';
 import '../models/model_id.dart';
 import '../models/request_options.dart';
@@ -23,6 +24,9 @@ class ModelsEndpoint {
       return ModelsResponse.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw mapDioError(e);
+    } catch (e, st) {
+      logger.error('ModelsResponse.fromJson failed', e, st);
+      rethrow;
     }
   }
 
@@ -33,6 +37,9 @@ class ModelsEndpoint {
       return ModelById.fromJson(response.data as Map<String, dynamic>);
     } on DioException catch (e) {
       throw mapDioError(e);
+    } catch (e, st) {
+      logger.error('ModelById.fromJson failed', e, st);
+      rethrow;
     }
   }
 

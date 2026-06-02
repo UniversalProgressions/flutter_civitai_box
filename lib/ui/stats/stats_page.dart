@@ -2,6 +2,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../db/database.dart';
+import '../../services/hash_check_service.dart';
+import '../../services/model_refresh_bus.dart';
 
 /// Statistics dashboard showing aggregated model information.
 class StatsPage extends StatefulWidget {
@@ -38,9 +40,24 @@ class _StatsPageState extends State<StatsPage> {
   // Recent updates
   List<_RecentModel> _recentUpdates = [];
 
+  // Hash check
+  bool _hashChecking = false;
+  HashCheckProgress? _hashProgress;
+
   @override
   void initState() {
     super.initState();
+    _fetchAll();
+    ModelRefreshBus.instance.addListener(_onDataChanged);
+  }
+
+  @override
+  void dispose() {
+    ModelRefreshBus.instance.removeListener(_onDataChanged);
+    super.dispose();
+  }
+
+  void _onDataChanged() {
     _fetchAll();
   }
 
@@ -148,6 +165,21 @@ class _StatsPageState extends State<StatsPage> {
     }).toList();
   }
 
+  Future<void> _startHashCheck() async {
+    setState(() {
+      _hashChecking = true;
+      _hashProgress = null;
+    });
+
+    const service = HashCheckService();
+    await for (final progress in service.checkAll()) {
+      if (!mounted) return;
+      setState(() => _hashProgress = progress);
+    }
+
+    if (mounted) setState(() => _hashChecking = false);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -187,6 +219,10 @@ class _StatsPageState extends State<StatsPage> {
             _buildSectionTitle('Recent Updates'),
             const SizedBox(height: 8),
             _buildRecentUpdates(theme),
+            const SizedBox(height: 24),
+            _buildSectionTitle('File Integrity'),
+            const SizedBox(height: 8),
+            _buildHashCheckSection(theme),
             const SizedBox(height: 32),
           ],
         ),
@@ -195,7 +231,192 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   // ---------------------------------------------------------------------------
-  // Overview Cards
+  // Hash Check
+  // ---------------------------------------------------------------------------
+  Widget _buildHashCheckSection(ThemeData theme) {
+    final progress = _hashProgress;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Idle state: show button
+            if (!_hashChecking && progress == null) ...[
+              Text(
+                'Verify downloaded model files against CivitAI hashes.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _startHashCheck,
+                icon: const Icon(Icons.verified_user, size: 20),
+                label: const Text('Check Integrity'),
+              ),
+            ],
+
+            // Checking: progress bar
+            if (_hashChecking && progress != null) ...[
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Checking ${progress.checked} / ${progress.total}',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress.total > 0
+                      ? progress.checked / progress.total
+                      : 0,
+                  minHeight: 6,
+                ),
+              ),
+              if (progress.currentFile != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  progress.currentFile!,
+                  style: theme.textTheme.bodySmall,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+
+            // Done: summary + details
+            if (!_hashChecking && progress != null) ...[
+              // Summary row
+              Row(
+                children: [
+                  _HashStatusChip(
+                    icon: Icons.check_circle,
+                    label: '${progress.passed} passed',
+                    color: Colors.green,
+                  ),
+                  const SizedBox(width: 8),
+                  _HashStatusChip(
+                    icon: Icons.error,
+                    label: '${progress.mismatched} mismatch',
+                    color: Colors.red,
+                  ),
+                  const SizedBox(width: 8),
+                  _HashStatusChip(
+                    icon: Icons.help_outline,
+                    label: '${progress.skipped} skipped',
+                    color: Colors.grey,
+                  ),
+                  const Spacer(),
+                  TextButton.icon(
+                    onPressed: _startHashCheck,
+                    icon: const Icon(Icons.refresh, size: 16),
+                    label: const Text('Re-check'),
+                  ),
+                ],
+              ),
+              // Failed details
+              if (progress.mismatched > 0 || progress.missing > 0) ...[
+                const Divider(height: 24),
+                ...progress.results
+                    .where(
+                      (r) =>
+                          r.status == HashCheckStatus.mismatch ||
+                          r.status == HashCheckStatus.missing,
+                    )
+                    .map((r) => _buildFailedRow(r, theme)),
+              ],
+              if (progress.mismatched == 0 &&
+                  progress.missing == 0 &&
+                  progress.passed > 0) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.verified, color: Colors.green, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'All ${progress.passed} files verified successfully',
+                      style: TextStyle(color: Colors.green.shade700),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFailedRow(HashCheckFileResult r, ThemeData theme) {
+    final icon = r.status == HashCheckStatus.missing
+        ? Icons.warning_amber
+        : Icons.close;
+    final color = r.status == HashCheckStatus.missing
+        ? Colors.orange
+        : Colors.red;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: ExpansionTile(
+        leading: Icon(icon, color: color, size: 20),
+        title: Text(
+          r.fileName,
+          style: const TextStyle(fontSize: 13),
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          r.status == HashCheckStatus.missing
+              ? 'File not found on disk'
+              : 'Hash mismatch (SHA256)',
+          style: TextStyle(fontSize: 11, color: color),
+        ),
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(left: 16, bottom: 8),
+        children: [
+          if (r.status == HashCheckStatus.mismatch) ...[
+            _detailRow('Expected', r.expectedHash ?? ''),
+            _detailRow('Actual', r.actualHash ?? ''),
+          ],
+          _detailRow('Size', r.sizeFormatted),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   Widget _buildOverviewCards(ThemeData theme) {
     return Row(
@@ -702,6 +923,40 @@ class _OverviewCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hash Status Chip
+// ---------------------------------------------------------------------------
+class _HashStatusChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _HashStatusChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(fontSize: 12, color: color)),
+        ],
       ),
     );
   }

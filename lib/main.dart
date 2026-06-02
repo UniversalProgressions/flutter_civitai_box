@@ -3,6 +3,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'settings/settings.dart';
+import 'services/download/download_queue.dart';
 import 'ui/download/download_page.dart';
 import 'ui/local_models/local_models_page.dart';
 import 'ui/settings/settings_page.dart';
@@ -13,6 +14,7 @@ void main() async {
   MediaKit.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+  await DownloadQueue.instance.init();
   runApp(const MyApp());
 }
 

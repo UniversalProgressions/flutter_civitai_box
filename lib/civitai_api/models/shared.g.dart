@@ -73,8 +73,8 @@ _ModelImage _$ModelImageFromJson(Map<String, dynamic> json) => _ModelImage(
   nsfwLevel: (json['nsfwLevel'] as num).toInt(),
   width: (json['width'] as num).toInt(),
   height: (json['height'] as num).toInt(),
-  hash: json['hash'] as String,
-  type: json['type'] as String,
+  hash: json['hash'] as String?,
+  type: json['type'] as String?,
 );
 
 Map<String, dynamic> _$ModelImageToJson(_ModelImage instance) =>

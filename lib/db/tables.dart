@@ -208,6 +208,31 @@ CREATE TABLE IF NOT EXISTS saved_search (
 );
 ''';
 
+/// ---------------------------------------------------------------------------
+/// DownloadTask
+/// ---------------------------------------------------------------------------
+const String createDownloadTaskTable = '''
+CREATE TABLE IF NOT EXISTS download_task (
+  id                   TEXT    PRIMARY KEY,
+  batch_id             TEXT    NOT NULL,
+  model_id             INTEGER NOT NULL,
+  model_version_id     INTEGER NOT NULL,
+  file_name            TEXT    NOT NULL,
+  file_size_kb         REAL    NOT NULL,
+  download_url         TEXT    NOT NULL,
+  target_path          TEXT    NOT NULL,
+  file_type            TEXT    NOT NULL,
+  status               TEXT    NOT NULL DEFAULT 'pending',
+  progress             REAL    NOT NULL DEFAULT 0,
+  error_message        TEXT,
+  background_task_id   TEXT,
+  created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_download_task_batch ON download_task(batch_id);
+CREATE INDEX IF NOT EXISTS idx_download_task_status ON download_task(status);
+''';
+
 /// Ordered list of all CREATE statements for the migration runner.
 const List<String> allCreateStatements = [
   createCreatorTable,
@@ -223,4 +248,5 @@ const List<String> allCreateStatements = [
   createUserCustomPreviewTable,
   createUserCustomTagTable,
   createSavedSearchTable,
+  createDownloadTaskTable,
 ];

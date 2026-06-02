@@ -888,7 +888,7 @@ $FileHashesCopyWith<$Res>? get hashes {
 /// @nodoc
 mixin _$ModelImage {
 
- String get url; int get nsfwLevel; int get width; int get height; String get hash; String get type;
+ String get url; int get nsfwLevel; int get width; int get height; String? get hash; String? get type;
 /// Create a copy of ModelImage
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -921,7 +921,7 @@ abstract mixin class $ModelImageCopyWith<$Res>  {
   factory $ModelImageCopyWith(ModelImage value, $Res Function(ModelImage) _then) = _$ModelImageCopyWithImpl;
 @useResult
 $Res call({
- String url, int nsfwLevel, int width, int height, String hash, String type
+ String url, int nsfwLevel, int width, int height, String? hash, String? type
 });
 
 
@@ -938,15 +938,15 @@ class _$ModelImageCopyWithImpl<$Res>
 
 /// Create a copy of ModelImage
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? url = null,Object? nsfwLevel = null,Object? width = null,Object? height = null,Object? hash = null,Object? type = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? url = null,Object? nsfwLevel = null,Object? width = null,Object? height = null,Object? hash = freezed,Object? type = freezed,}) {
   return _then(_self.copyWith(
 url: null == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
 as String,nsfwLevel: null == nsfwLevel ? _self.nsfwLevel : nsfwLevel // ignore: cast_nullable_to_non_nullable
 as int,width: null == width ? _self.width : width // ignore: cast_nullable_to_non_nullable
 as int,height: null == height ? _self.height : height // ignore: cast_nullable_to_non_nullable
-as int,hash: null == hash ? _self.hash : hash // ignore: cast_nullable_to_non_nullable
-as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
-as String,
+as int,hash: freezed == hash ? _self.hash : hash // ignore: cast_nullable_to_non_nullable
+as String?,type: freezed == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
@@ -1031,7 +1031,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String url,  int nsfwLevel,  int width,  int height,  String hash,  String type)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String url,  int nsfwLevel,  int width,  int height,  String? hash,  String? type)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ModelImage() when $default != null:
 return $default(_that.url,_that.nsfwLevel,_that.width,_that.height,_that.hash,_that.type);case _:
@@ -1052,7 +1052,7 @@ return $default(_that.url,_that.nsfwLevel,_that.width,_that.height,_that.hash,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String url,  int nsfwLevel,  int width,  int height,  String hash,  String type)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String url,  int nsfwLevel,  int width,  int height,  String? hash,  String? type)  $default,) {final _that = this;
 switch (_that) {
 case _ModelImage():
 return $default(_that.url,_that.nsfwLevel,_that.width,_that.height,_that.hash,_that.type);case _:
@@ -1072,7 +1072,7 @@ return $default(_that.url,_that.nsfwLevel,_that.width,_that.height,_that.hash,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String url,  int nsfwLevel,  int width,  int height,  String hash,  String type)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String url,  int nsfwLevel,  int width,  int height,  String? hash,  String? type)?  $default,) {final _that = this;
 switch (_that) {
 case _ModelImage() when $default != null:
 return $default(_that.url,_that.nsfwLevel,_that.width,_that.height,_that.hash,_that.type);case _:
@@ -1087,15 +1087,15 @@ return $default(_that.url,_that.nsfwLevel,_that.width,_that.height,_that.hash,_t
 @JsonSerializable()
 
 class _ModelImage implements ModelImage {
-  const _ModelImage({required this.url, required this.nsfwLevel, required this.width, required this.height, required this.hash, required this.type});
+  const _ModelImage({required this.url, required this.nsfwLevel, required this.width, required this.height, this.hash, this.type});
   factory _ModelImage.fromJson(Map<String, dynamic> json) => _$ModelImageFromJson(json);
 
 @override final  String url;
 @override final  int nsfwLevel;
 @override final  int width;
 @override final  int height;
-@override final  String hash;
-@override final  String type;
+@override final  String? hash;
+@override final  String? type;
 
 /// Create a copy of ModelImage
 /// with the given fields replaced by the non-null parameter values.
@@ -1130,7 +1130,7 @@ abstract mixin class _$ModelImageCopyWith<$Res> implements $ModelImageCopyWith<$
   factory _$ModelImageCopyWith(_ModelImage value, $Res Function(_ModelImage) _then) = __$ModelImageCopyWithImpl;
 @override @useResult
 $Res call({
- String url, int nsfwLevel, int width, int height, String hash, String type
+ String url, int nsfwLevel, int width, int height, String? hash, String? type
 });
 
 
@@ -1147,15 +1147,15 @@ class __$ModelImageCopyWithImpl<$Res>
 
 /// Create a copy of ModelImage
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? url = null,Object? nsfwLevel = null,Object? width = null,Object? height = null,Object? hash = null,Object? type = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? url = null,Object? nsfwLevel = null,Object? width = null,Object? height = null,Object? hash = freezed,Object? type = freezed,}) {
   return _then(_ModelImage(
 url: null == url ? _self.url : url // ignore: cast_nullable_to_non_nullable
 as String,nsfwLevel: null == nsfwLevel ? _self.nsfwLevel : nsfwLevel // ignore: cast_nullable_to_non_nullable
 as int,width: null == width ? _self.width : width // ignore: cast_nullable_to_non_nullable
 as int,height: null == height ? _self.height : height // ignore: cast_nullable_to_non_nullable
-as int,hash: null == hash ? _self.hash : hash // ignore: cast_nullable_to_non_nullable
-as String,type: null == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
-as String,
+as int,hash: freezed == hash ? _self.hash : hash // ignore: cast_nullable_to_non_nullable
+as String?,type: freezed == type ? _self.type : type // ignore: cast_nullable_to_non_nullable
+as String?,
   ));
 }
 
