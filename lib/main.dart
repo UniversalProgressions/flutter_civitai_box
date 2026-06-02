@@ -3,6 +3,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'settings/settings.dart';
+import 'ui/download/download_page.dart';
 import 'ui/local_models/local_models_page.dart';
 import 'ui/settings/settings_page.dart';
 
@@ -87,7 +88,11 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
-  final _pages = const <Widget>[LocalModelsPage(), SettingsPage()];
+  final _pages = const <Widget>[
+    LocalModelsPage(),
+    DownloadPage(),
+    SettingsPage(),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +104,11 @@ class _MainShellState extends State<MainShell> {
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.collections_bookmark),
-            label: 'Models',
+            label: 'Local Models',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.cloud_download),
+            label: 'Download',
           ),
           NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
         ],

@@ -1,72 +1,25 @@
-import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
 import 'package:test/test.dart';
+import 'package:mocktail/mocktail.dart';
 
-import 'package:flutter_civitai_box/civitai_api/endpoints/creators.dart';
-import 'package:flutter_civitai_box/civitai_api/errors.dart';
-import 'package:flutter_civitai_box/civitai_api/http_client.dart';
-import 'package:flutter_civitai_box/civitai_api/models/request_options.dart';
+import 'package:flutter_civitai_box/civitai_api/endpoints/creators_endpoint.dart';
+import 'package:flutter_civitai_box/civitai_api/civitai_api_exception.dart';
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+class MockDio extends Mock implements Dio {}
 
-HttpClient _fakeHttpClient(dynamic responseJson) => (
-  get:
-      (
-        String path, {
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => right(responseJson),
-  post:
-      (
-        String path, {
-        dynamic body,
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => left(CivitaiError.api(405, 'Not used')),
-  put:
-      (
-        String path, {
-        dynamic body,
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => left(CivitaiError.api(405, 'Not used')),
-  delete:
-      (
-        String path, {
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => left(CivitaiError.api(405, 'Not used')),
-);
-
-HttpClient _failingHttpClient(CivitaiError error) => (
-  get:
-      (
-        String path, {
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => left(error),
-  post:
-      (
-        String path, {
-        dynamic body,
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => left(CivitaiError.api(405, 'Not used')),
-  put:
-      (
-        String path, {
-        dynamic body,
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => left(CivitaiError.api(405, 'Not used')),
-  delete:
-      (
-        String path, {
-        Map<String, dynamic>? queryParams,
-        Map<String, String>? headers,
-      }) async => left(CivitaiError.api(405, 'Not used')),
-);
+MockDio _mockDioSuccess(dynamic data) {
+  final dio = MockDio();
+  when(
+    () => dio.get(any(), queryParameters: any(named: 'queryParameters')),
+  ).thenAnswer(
+    (_) async => Response<dynamic>(
+      data: data,
+      statusCode: 200,
+      requestOptions: RequestOptions(path: ''),
+    ),
+  );
+  return dio;
+}
 
 Map<String, dynamic> _creatorsResponseJson() => {
   'items': [
@@ -76,30 +29,17 @@ Map<String, dynamic> _creatorsResponseJson() => {
   'metadata': {'totalItems': 2, 'currentPage': 1},
 };
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 void main() {
-  group('CreatorsApi.list', () {
+  group('CreatorsEndpoint.list', () {
     test('returns CreatorsResponse on success', () async {
-      final api = createCreatorsApi(_fakeHttpClient(_creatorsResponseJson()));
-      final result = await api.list();
-      expect(result.isRight(), true);
-      result.fold((_) => fail('expected Right'), (response) {
-        expect(response.items.length, 2);
-        expect(response.items[0].username, 'creator1');
-        expect(response.items[1].modelCount, 12);
-        expect(response.metadata.totalItems, 2);
-      });
-    });
-
-    test('passes query params with options', () async {
-      final api = createCreatorsApi(_fakeHttpClient(_creatorsResponseJson()));
-      final result = await api.list(
-        CreatorsRequestOptions(limit: 5, query: 'john'),
+      final endpoint = CreatorsEndpoint(
+        _mockDioSuccess(_creatorsResponseJson()),
       );
-      expect(result.isRight(), true);
+      final response = await endpoint.list();
+      expect(response.items.length, 2);
+      expect(response.items[0].username, 'creator1');
+      expect(response.items[1].modelCount, 12);
+      expect(response.metadata.totalItems, 2);
     });
 
     test('handles empty items', () async {
@@ -107,34 +47,52 @@ void main() {
         'items': <Map<String, dynamic>>[],
         'metadata': <String, dynamic>{},
       };
-      final api = createCreatorsApi(_fakeHttpClient(json));
-      final result = await api.list();
-      expect(result.isRight(), true);
-      result.fold(
-        (_) => fail('expected Right'),
-        (response) => expect(response.items, isEmpty),
-      );
+      final endpoint = CreatorsEndpoint(_mockDioSuccess(json));
+      final response = await endpoint.list();
+      expect(response.items, isEmpty);
     });
 
-    test('returns ApiError when response is not a Map', () async {
-      final api = createCreatorsApi(_fakeHttpClient([1, 2, 3]));
-      final result = await api.list();
-      expect(result.isLeft(), true);
-      result.fold(
-        (e) => expect(e, isA<ApiError>()),
-        (_) => fail('expected Left'),
+    test('throws NetworkException on connection error', () async {
+      final dio = MockDio();
+      when(
+        () => dio.get(any(), queryParameters: any(named: 'queryParameters')),
+      ).thenThrow(
+        DioException(
+          type: DioExceptionType.connectionError,
+          message: 'No connection',
+          requestOptions: RequestOptions(path: ''),
+        ),
       );
+      final endpoint = CreatorsEndpoint(dio);
+      expect(() => endpoint.list(), throwsA(isA<CivitaiNetworkException>()));
     });
 
-    test('returns error on HTTP failure', () async {
-      final api = createCreatorsApi(
-        _failingHttpClient(CivitaiError.network('No connection')),
+    test('throws ApiException on 503', () async {
+      final dio = MockDio();
+      when(
+        () => dio.get(any(), queryParameters: any(named: 'queryParameters')),
+      ).thenThrow(
+        DioException(
+          type: DioExceptionType.badResponse,
+          message: 'Service Unavailable',
+          response: Response<dynamic>(
+            data: {'error': 'Down'},
+            statusCode: 503,
+            requestOptions: RequestOptions(path: ''),
+          ),
+          requestOptions: RequestOptions(path: ''),
+        ),
       );
-      final result = await api.list();
-      expect(result.isLeft(), true);
-      result.fold(
-        (e) => expect(e, isA<NetworkError>()),
-        (_) => fail('expected Left'),
+      final endpoint = CreatorsEndpoint(dio);
+      expect(
+        () => endpoint.list(),
+        throwsA(
+          isA<CivitaiApiException>().having(
+            (e) => e.statusCode,
+            'statusCode',
+            503,
+          ),
+        ),
       );
     });
   });

@@ -12,9 +12,9 @@ Map<String, dynamic> _fixture(String name) =>
         as Map<String, dynamic>;
 
 /// Extract image ID from a modelVersion-endpoint image (which lacks an `id` field).
-int _imageId(Map<String, dynamic> img) => extractIdFromImageUrl(
-  img['url'] as String,
-).fold((e) => throw Exception(e), (id) => id);
+int _imageId(Map<String, dynamic> img) =>
+    extractIdFromImageUrl(img['url'] as String) ??
+    (throw Exception('Cannot extract image ID from ${img['url']}'));
 
 // ---------------------------------------------------------------------------
 // Test suite

@@ -60,7 +60,7 @@ class _ModelDetailSheetState extends State<ModelDetailSheet>
       final images = <_ImageData>[];
       for (final img in rawImages) {
         final url = img['url'] as String;
-        final imageId = extractIdFromImageUrl(url).fold((_) => 0, (id) => id);
+        final imageId = extractIdFromImageUrl(url) ?? 0;
         final mediaDir = getMediaDir(basePath, typeName, widget.modelId, vid);
         String? localPath;
         for (final ext in ['.jpeg', '.jpg', '.png', '.webp', '.gif', '.mp4']) {

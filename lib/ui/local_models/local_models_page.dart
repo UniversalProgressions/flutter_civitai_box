@@ -152,9 +152,8 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
       final typeName = img['type_name'] as String;
       final url = img['url'] as String;
 
-      final idResult = extractIdFromImageUrl(url);
-      if (idResult.isLeft()) continue;
-      final imageId = idResult.fold((_) => 0, (id) => id);
+      final imageId = extractIdFromImageUrl(url);
+      if (imageId == null) continue;
 
       final mediaDir = getMediaDir(basePath, typeName, modelId, versionId);
       for (final ext in exts) {

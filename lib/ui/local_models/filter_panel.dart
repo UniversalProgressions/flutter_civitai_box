@@ -363,7 +363,7 @@ class _FilterPanelState extends State<FilterPanel> {
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value:
+                      initialValue:
                           _savedSearches.any(
                             (s) => s['name'] == _selectedPresetName,
                           )

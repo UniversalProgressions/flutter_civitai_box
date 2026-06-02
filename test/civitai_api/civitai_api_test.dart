@@ -1,43 +1,44 @@
-import 'package:dio/dio.dart';
 import 'package:test/test.dart';
-import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_civitai_box/civitai_api/civitai_api.dart';
 
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
-class MockDio extends Mock implements Dio {}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 void main() {
-  group('createCivitaiApi', () {
-    test('creates API with default baseUrl when none provided', () {
-      final api = createCivitaiApi();
+  group('CivitaiApiClient', () {
+    test('creates with defaults', () {
+      final api = CivitaiApiClient();
       expect(api.models, isNotNull);
       expect(api.creators, isNotNull);
       expect(api.modelVersions, isNotNull);
       expect(api.tags, isNotNull);
     });
 
-    test('creates API with custom baseUrl', () {
-      final api = createCivitaiApi(baseUrl: 'https://custom.api/v1');
+    test('creates with custom baseUrl', () {
+      final api = CivitaiApiClient(baseUrl: 'https://custom.api/v1');
       expect(api.models, isNotNull);
     });
 
-    test('creates API with apiKey', () {
-      final api = createCivitaiApi(apiKey: 'test-key-123');
+    test('creates with apiKey', () {
+      final api = CivitaiApiClient(apiKey: 'test-key-123');
       expect(api.models, isNotNull);
     });
 
-    test('all endpoint records are structurally typed correctly', () {
-      final api = createCivitaiApi();
+    test('creates with custom timeout', () {
+      final api = CivitaiApiClient(timeout: 5000);
+      expect(api.models, isNotNull);
+    });
 
-      // Verify the record fields exist (structural typing)
+    test('endpoint types are correct', () {
+      final api = CivitaiApiClient();
+
+      expect(api.models, isA<ModelsEndpoint>());
+      expect(api.creators, isA<CreatorsEndpoint>());
+      expect(api.modelVersions, isA<ModelVersionsEndpoint>());
+      expect(api.tags, isA<TagsEndpoint>());
+    });
+
+    test('endpoint methods are available', () {
+      final api = CivitaiApiClient();
+
       expect(api.models.list, isA<Function>());
       expect(api.models.getById, isA<Function>());
       expect(api.models.getModel, isA<Function>());
@@ -50,38 +51,6 @@ void main() {
       expect(api.modelVersions.resolveFileDownloadUrl, isA<Function>());
 
       expect(api.tags.list, isA<Function>());
-    });
-  });
-
-  group('createCivitaiApiFromConfig', () {
-    test('creates API from CivitaiConfig', () {
-      final config = CivitaiConfig(
-        apiKey: 'key',
-        baseUrl: 'https://test.api/v1',
-        timeout: 10000,
-      );
-      final api = createCivitaiApiFromConfig(config);
-      expect(api.models, isNotNull);
-      expect(api.creators, isNotNull);
-    });
-  });
-
-  group('CivitaiApi typedef', () {
-    test('can destructure record fields', () {
-      final api = createCivitaiApi();
-      final (:models, :creators, :modelVersions, :tags) = api;
-      expect(models, isNotNull);
-      expect(creators, isNotNull);
-      expect(modelVersions, isNotNull);
-      expect(tags, isNotNull);
-    });
-  });
-
-  group('Exports', () {
-    test('all model types are exported', () {
-      // Just verify the types compile — implicit test
-      expect(CivitaiConfig, isNotNull);
-      expect(CivitaiError.api, isA<Function>());
     });
   });
 }

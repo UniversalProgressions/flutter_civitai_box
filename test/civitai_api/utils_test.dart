@@ -1,4 +1,3 @@
-import 'package:dartz/dartz.dart';
 import 'package:test/test.dart';
 
 import 'package:flutter_civitai_box/civitai_api/utils.dart';
@@ -11,31 +10,31 @@ void main() {
       final result = extractFilenameFromUrl(
         'https://image.civitai.com/x/width=1024/1743606.jpeg',
       );
-      expect(result, right('1743606.jpeg'));
+      expect(result, '1743606.jpeg');
     });
 
     test('extracts filename without query params', () {
       final result = extractFilenameFromUrl(
         'https://example.com/path/to/file.safetensors?token=abc',
       );
-      expect(result, right('file.safetensors'));
+      expect(result, 'file.safetensors');
     });
 
-    test('returns Left for empty path', () {
+    test('returns null for URL without path', () {
       final result = extractFilenameFromUrl('https://example.com');
-      expect(result.isLeft(), true);
-    });
-
-    test('returns Left for URL with empty path', () {
-      final result = extractFilenameFromUrl('https://example.com');
-      expect(result.isLeft(), true);
+      expect(result, isNull);
     });
 
     test('handles URL with fragment', () {
       final result = extractFilenameFromUrl(
         'https://example.com/file.txt#section',
       );
-      expect(result, right('file.txt'));
+      expect(result, 'file.txt');
+    });
+
+    test('returns null for invalid URL', () {
+      final result = extractFilenameFromUrl('not-a-url');
+      expect(result, isNull);
     });
   });
 
@@ -54,8 +53,6 @@ void main() {
     });
 
     test('handles hidden files (dot prefix)', () {
-      // For '.gitignore', the dot is the extension separator so
-      // removeFileExtension returns empty string (file without name)
       expect(removeFileExtension('.gitignore'), '');
     });
   });
@@ -65,19 +62,19 @@ void main() {
       final result = extractIdFromImageUrl(
         'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/cbe20dcf-7721-4f34-bc24-9ff14b96cab2/width=1024/1743606.jpeg',
       );
-      expect(result, right(1743606));
+      expect(result, 1743606);
     });
 
-    test('returns Left for invalid URL', () {
+    test('returns null for invalid URL', () {
       final result = extractIdFromImageUrl('not-a-url');
-      expect(result.isLeft(), true);
+      expect(result, isNull);
     });
 
-    test('returns Left for non-numeric filename', () {
+    test('returns null for non-numeric filename', () {
       final result = extractIdFromImageUrl(
         'https://image.civitai.com/x/width=1024/notanumber.jpeg',
       );
-      expect(result.isLeft(), true);
+      expect(result, isNull);
     });
   });
 
@@ -164,15 +161,12 @@ void main() {
         ],
       );
 
-      final result = modelId2Model(modelById);
-      expect(result.isRight(), true);
-      result.fold((_) => fail('expected Right'), (model) {
-        expect(model.id, 123);
-        expect(model.name, 'Test Model');
-        expect(model.modelVersions.length, 1);
-        expect(model.modelVersions[0].images.length, 1);
-        expect(model.modelVersions[0].images[0].id, 42);
-      });
+      final model = modelId2Model(modelById);
+      expect(model.id, 123);
+      expect(model.name, 'Test Model');
+      expect(model.modelVersions.length, 1);
+      expect(model.modelVersions[0].images.length, 1);
+      expect(model.modelVersions[0].images[0].id, 42);
     });
 
     test('handles image URL without numeric ID (id becomes 0)', () {
@@ -201,11 +195,8 @@ void main() {
         ],
       );
 
-      final result = modelId2Model(modelById);
-      expect(result.isRight(), true);
-      result.fold((_) => fail('expected Right'), (model) {
-        expect(model.modelVersions[0].images[0].id, 0);
-      });
+      final model = modelId2Model(modelById);
+      expect(model.modelVersions[0].images[0].id, 0);
     });
 
     test('preserves ModelStats, tags, and creator', () {
@@ -227,15 +218,12 @@ void main() {
         modelVersions: [],
       );
 
-      final result = modelId2Model(modelById);
-      expect(result.isRight(), true);
-      result.fold((_) => fail('expected Right'), (model) {
-        expect(model.description, 'Has everything');
-        expect(model.type, 'LORA');
-        expect(model.poi, true);
-        expect(model.stats.downloadCount, 1000);
-        expect(model.tags, ['anime', 'style']);
-      });
+      final model = modelId2Model(modelById);
+      expect(model.description, 'Has everything');
+      expect(model.type, 'LORA');
+      expect(model.poi, true);
+      expect(model.stats.downloadCount, 1000);
+      expect(model.tags, ['anime', 'style']);
     });
 
     test('handles multiple versions', () {
@@ -261,12 +249,8 @@ void main() {
         ],
       );
 
-      final result = modelId2Model(modelById);
-      expect(result.isRight(), true);
-      result.fold(
-        (_) => fail('expected Right'),
-        (model) => expect(model.modelVersions.length, 2),
-      );
+      final model = modelId2Model(modelById);
+      expect(model.modelVersions.length, 2);
     });
   });
 }
