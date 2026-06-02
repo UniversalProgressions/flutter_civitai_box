@@ -99,17 +99,17 @@ lib/
 
 The app uses SQLite with the following tables:
 
-| Table | Purpose |
-|-------|---------|
-| `model` | CivitAI models (id, name, type, NSFW, full API JSON) |
-| `model_version` | Model versions (base model, files, images) |
-| `model_version_file` | Downloadable files (name, size, download URL) |
-| `model_version_image` | Preview images (URL, dimensions, perceptual hash) |
-| `creator` | Model creators (username, avatar) |
-| `model_type` | Model categories (Checkpoint, LoRA, etc.) |
-| `base_model` | Base model names (SD 1.5, SDXL, Flux, etc.) |
-| `tag` | Tags with many-to-many model association |
-| `download_task` | Download queue persistence |
+| Table                 | Purpose                                              |
+| --------------------- | ---------------------------------------------------- |
+| `model`               | CivitAI models (id, name, type, NSFW, full API JSON) |
+| `model_version`       | Model versions (base model, files, images)           |
+| `model_version_file`  | Downloadable files (name, size, download URL)        |
+| `model_version_image` | Preview images (URL, dimensions, perceptual hash)    |
+| `creator`             | Model creators (username, avatar)                    |
+| `model_type`          | Model categories (Checkpoint, LoRA, etc.)            |
+| `base_model`          | Base model names (SD 1.5, SDXL, Flux, etc.)          |
+| `tag`                 | Tags with many-to-many model association             |
+| `download_task`       | Download queue persistence                           |
 
 See `lib/db/SCHEMA.md` for the full schema.
 

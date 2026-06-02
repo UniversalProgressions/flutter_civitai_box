@@ -291,12 +291,6 @@ class HashCheckService {
     return null;
   }
 
-  /// Compute SHA256 hash using crypto package (streaming, low memory).
-  Future<String> _computeSha256(File file) async {
-    final digest = await crypto.sha256.bind(file.openRead()).first;
-    return digest.toString().toUpperCase();
-  }
-
   String _buildFilePath(
     String basePath,
     String modelType,

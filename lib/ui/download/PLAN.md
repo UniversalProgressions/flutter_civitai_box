@@ -79,10 +79,10 @@ A **batch** groups all tasks for one ModelVersion (derived from `batch_id`):
 
 ### ⚠️ API JSON 字段使用规范
 
-| 文件                        | 来源                              | 限制 | 说明 |
-| --------------------------- | --------------------------------- | ---- | ---- |
+| 文件                        | 来源                              | 限制 | 说明                                     |
+| --------------------------- | --------------------------------- | ---- | ---------------------------------------- |
 | `{modelId}.api-info.json`   | `GET /api/v1/models/{id}`         | 无   | 完整保留所有字段（包括 `modelVersions`） |
-| `{versionId}.api-info.json` | `GET /api/v1/model-versions/{id}` | 无   | 完整保留 |
+| `{versionId}.api-info.json` | `GET /api/v1/model-versions/{id}` | 无   | 完整保留                                 |
 
 > **Note**: Model-level JSON 保留 `modelVersions`。写放大对 QLC SSD 影响可忽略。
 
@@ -145,29 +145,29 @@ sequenceDiagram
 
 ```markdown
 +-- Download -----------------------------------+
-|                                               |
-|  -- Fetch ------------------------------------|
-|  Load type:  [Model ID v]                     |
-|  ID:         [12345________]    [Fetch]        |
-|                                               |
-|  v dreamshaper (Checkpoint)         [select all]
-|    [x] v8            2 files, 3.2 GB           |
-|    [ ] v7            1 file,  2.1 GB           |
-|  v anything-v5 (LoRA)                          |
-|    [x] v3            1 file,  144 MB           |
-|                                               |
-|  [Download Selected (2 versions)]              |
-|                                               |
-|  -- Queue ------------------------------------|
-|  |> dreamshaper v8               ####__ 67%  |
-|     model.safetensors  1.2 / 2.1 GB           |
-|                                               |
-|  || anything-v5 v3               Pending      |
-|     1 file, 144 MB                             |
-|                                               |
-|  OK dreamshaper v7               Completed     |
-|     2 files, 3.2 GB              (history)     |
-|                                               |
+| |
+| -- Fetch ------------------------------------|
+| Load type: [Model ID v] |
+| ID: [12345________] [Fetch] |
+| |
+| v dreamshaper (Checkpoint) [select all]
+| [x] v8 2 files, 3.2 GB |
+| [ ] v7 1 file, 2.1 GB |
+| v anything-v5 (LoRA) |
+| [x] v3 1 file, 144 MB |
+| |
+| [Download Selected (2 versions)] |
+| |
+| -- Queue ------------------------------------|
+| |> dreamshaper v8 ####\_\_ 67% |
+| model.safetensors 1.2 / 2.1 GB |
+| |
+| || anything-v5 v3 Pending |
+| 1 file, 144 MB |
+| |
+| OK dreamshaper v7 Completed |
+| 2 files, 3.2 GB (history) |
+| |
 +-----------------------------------------------+
 ```
 
@@ -193,44 +193,44 @@ sequenceDiagram
 
 ### Phase 1 — Core Download Page ✅
 
-| # | Task | Status |
-|---|------|--------|
-| 1.1 | `DownloadPage` with dual-input UI | ✅ |
-| 1.2 | Model ID fetch → upsert → navigate | ✅ |
-| 1.3 | Version ID fetch → upsert → navigate | ✅ |
-| 1.4 | Register in `MainShell` navigation | ✅ |
-| 1.5 | Error states | ✅ |
+| #   | Task                                 | Status |
+| --- | ------------------------------------ | ------ |
+| 1.1 | `DownloadPage` with dual-input UI    | ✅     |
+| 1.2 | Model ID fetch → upsert → navigate   | ✅     |
+| 1.3 | Version ID fetch → upsert → navigate | ✅     |
+| 1.4 | Register in `MainShell` navigation   | ✅     |
+| 1.5 | Error states                         | ✅     |
 
 ### Phase 2 — Download Task System ✅
 
-| # | Task | Status |
-|---|------|--------|
-| 2.1 | `download_task` table DDL | ✅ |
-| 2.2 | Data models (DownloadTask, DownloadQueueState, status enum) | ✅ |
-| 2.3 | DB CRUD (DownloadDatabase) | ✅ |
-| 2.4 | Queue engine (enqueue/execute/pause/resume/cancel) | ✅ |
-| 2.5 | Startup restore via `DownloadQueue.init()` in `main()` | ✅ |
-| 2.6 | API JSON writer (model + version, retain all fields) | ✅ |
-| 2.7 | Download executor (model x2 → media x4) | ✅ |
-| 2.8 | Progress stream (Stream<DownloadQueueState>) | ✅ |
+| #   | Task                                                        | Status |
+| --- | ----------------------------------------------------------- | ------ |
+| 2.1 | `download_task` table DDL                                   | ✅     |
+| 2.2 | Data models (DownloadTask, DownloadQueueState, status enum) | ✅     |
+| 2.3 | DB CRUD (DownloadDatabase)                                  | ✅     |
+| 2.4 | Queue engine (enqueue/execute/pause/resume/cancel)          | ✅     |
+| 2.5 | Startup restore via `DownloadQueue.init()` in `main()`      | ✅     |
+| 2.6 | API JSON writer (model + version, retain all fields)        | ✅     |
+| 2.7 | Download executor (model x2 → media x4)                     | ✅     |
+| 2.8 | Progress stream (Stream<DownloadQueueState>)                | ✅     |
 
 ### Phase 3 — Download UI ✅
 
-| # | Task | Status |
-|---|------|--------|
-| 3.1 | Refactor page: Fetch section + Queue section | ✅ |
-| 3.2 | `DownloadBatchCard` | ✅ |
-| 3.3 | `DownloadTaskTile` | ✅ |
-| 3.4 | Wire queue stream to UI | ✅ |
-| 3.5 | Post-download: ModelRefreshBus.notify() | ✅ |
+| #   | Task                                         | Status |
+| --- | -------------------------------------------- | ------ |
+| 3.1 | Refactor page: Fetch section + Queue section | ✅     |
+| 3.2 | `DownloadBatchCard`                          | ✅     |
+| 3.3 | `DownloadTaskTile`                           | ✅     |
+| 3.4 | Wire queue stream to UI                      | ✅     |
+| 3.5 | Post-download: ModelRefreshBus.notify()      | ✅     |
 
 ### Phase 4 — Integration & Polish ✅
 
-| # | Task | Status |
-|---|------|--------|
-| 4.1 | StatsPage listens to ModelRefreshBus | ✅ |
-| 4.2 | Media size displays `—` (API missing sizeKB) | ✅ |
-| 4.3 | Unit tests: 32 tests | ✅ |
+| #   | Task                                         | Status |
+| --- | -------------------------------------------- | ------ |
+| 4.1 | StatsPage listens to ModelRefreshBus         | ✅     |
+| 4.2 | Media size displays `—` (API missing sizeKB) | ✅     |
+| 4.3 | Unit tests: 32 tests                         | ✅     |
 
 ---
 

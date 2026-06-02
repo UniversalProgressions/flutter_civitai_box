@@ -12,7 +12,6 @@ import '../../services/file_layout.dart';
 import '../../services/logger.dart';
 import '../../services/model_refresh_bus.dart';
 import '../../settings/settings.dart';
-import '../local_models/model_detail_page.dart';
 import 'widgets/download_batch_card.dart';
 
 /// Page for downloading CivitAI models by ID.

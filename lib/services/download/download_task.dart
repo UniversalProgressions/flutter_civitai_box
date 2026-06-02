@@ -1,5 +1,3 @@
-import '../../db/database.dart';
-
 /// Types of files in a download batch.
 enum DownloadFileType { model, media, apiJson }
 

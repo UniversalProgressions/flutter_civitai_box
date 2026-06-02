@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_civitai_box/db/db.dart';
 import 'package:flutter_civitai_box/services/download/download_database.dart';
-import 'package:flutter_civitai_box/services/download/download_queue.dart';
 import 'package:flutter_civitai_box/services/download/download_task.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:test/test.dart';
