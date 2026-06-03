@@ -35,13 +35,7 @@ final class SettingsService {
   // Storage keys (match the old project's JSON field names)
   // ---------------------------------------------------------------------------
 
-  static const _keys = [
-    'basePath',
-    'civitai_api_token',
-    'gopeed_api_host',
-    'http_proxy',
-    'gopeed_api_token',
-  ];
+  static const _keys = ['basePath', 'civitai_api_token', 'http_proxy'];
 
   // ---------------------------------------------------------------------------
   // Getters
@@ -72,7 +66,6 @@ final class SettingsService {
     final missing = <String>[];
     if (updated.basePath.isEmpty) missing.add('basePath');
     if (updated.civitaiApiToken.isEmpty) missing.add('civitaiApiToken');
-    if (updated.gopeedApiHost.isEmpty) missing.add('gopeedApiHost');
     if (missing.isNotEmpty) {
       throw SettingsUpdateError(
         'Missing required fields: ${missing.join(', ')}',

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../db/database.dart';
 import '../../services/hash_check_service.dart';
 import '../../services/model_refresh_bus.dart';
+import '../animation.dart';
 
 /// Statistics dashboard showing aggregated model information.
 class StatsPage extends StatefulWidget {
@@ -15,6 +16,7 @@ class StatsPage extends StatefulWidget {
 
 class _StatsPageState extends State<StatsPage> {
   bool _loading = true;
+  int _dataVersion = 0;
 
   // Overview
   int _totalModels = 0;
@@ -153,6 +155,7 @@ class _StatsPageState extends State<StatsPage> {
       }).toList();
 
       _loading = false;
+      _dataVersion++;
     });
   }
 
@@ -183,7 +186,9 @@ class _StatsPageState extends State<StatsPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: ShimmerGrid(crossAxisCount: 3)),
+      );
     }
 
     final theme = Theme.of(context);
@@ -191,40 +196,56 @@ class _StatsPageState extends State<StatsPage> {
       appBar: AppBar(title: const Text('Statistics')),
       body: RefreshIndicator(
         onRefresh: _fetchAll,
-        child: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _buildOverviewCards(theme),
-            const SizedBox(height: 24),
-            _buildSectionTitle('Model Type Distribution'),
-            const SizedBox(height: 8),
-            _buildHorizontalBarChart(_typeDistribution, theme),
-            const SizedBox(height: 24),
-            _buildSectionTitle('Base Model Distribution'),
-            const SizedBox(height: 8),
-            _buildPieChart(_baseModelDistribution, theme),
-            const SizedBox(height: 24),
-            _buildSectionTitle('NSFW Ratio'),
-            const SizedBox(height: 8),
-            _buildNsfwPieChart(theme),
-            const SizedBox(height: 24),
-            _buildSectionTitle('Top Creators'),
-            const SizedBox(height: 8),
-            _buildRankedList(_topCreators, theme),
-            const SizedBox(height: 24),
-            _buildSectionTitle('Top Tags'),
-            const SizedBox(height: 8),
-            _buildHorizontalBarChart(_topTags, theme),
-            const SizedBox(height: 24),
-            _buildSectionTitle('Recent Updates'),
-            const SizedBox(height: 8),
-            _buildRecentUpdates(theme),
-            const SizedBox(height: 24),
-            _buildSectionTitle('File Integrity'),
-            const SizedBox(height: 8),
-            _buildHashCheckSection(theme),
-            const SizedBox(height: 32),
-          ],
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: ListView(
+            key: ValueKey(_dataVersion),
+            padding: const EdgeInsets.all(16),
+            children: [
+              _AnimatedSection(index: 0, child: _buildOverviewCards(theme)),
+              const SizedBox(height: 24),
+              _buildSectionTitle('Model Type Distribution'),
+              const SizedBox(height: 8),
+              _AnimatedSection(
+                index: 1,
+                child: _buildHorizontalBarChart(_typeDistribution, theme),
+              ),
+              const SizedBox(height: 24),
+              _buildSectionTitle('Base Model Distribution'),
+              const SizedBox(height: 8),
+              _AnimatedSection(
+                index: 2,
+                child: _buildPieChart(_baseModelDistribution, theme),
+              ),
+              const SizedBox(height: 24),
+              _buildSectionTitle('NSFW Ratio'),
+              const SizedBox(height: 8),
+              _AnimatedSection(index: 3, child: _buildNsfwPieChart(theme)),
+              const SizedBox(height: 24),
+              _buildSectionTitle('Top Creators'),
+              const SizedBox(height: 8),
+              _AnimatedSection(
+                index: 4,
+                child: _buildRankedList(_topCreators, theme),
+              ),
+              const SizedBox(height: 24),
+              _buildSectionTitle('Top Tags'),
+              const SizedBox(height: 8),
+              _AnimatedSection(
+                index: 5,
+                child: _buildHorizontalBarChart(_topTags, theme),
+              ),
+              const SizedBox(height: 24),
+              _buildSectionTitle('Recent Updates'),
+              const SizedBox(height: 8),
+              _AnimatedSection(index: 6, child: _buildRecentUpdates(theme)),
+              const SizedBox(height: 24),
+              _buildSectionTitle('File Integrity'),
+              const SizedBox(height: 8),
+              _AnimatedSection(index: 7, child: _buildHashCheckSection(theme)),
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       ),
     );
@@ -302,19 +323,19 @@ class _StatsPageState extends State<StatsPage> {
                   _HashStatusChip(
                     icon: Icons.check_circle,
                     label: '${progress.passed} passed',
-                    color: Colors.green,
+                    color: theme.colorScheme.tertiary,
                   ),
                   const SizedBox(width: 8),
                   _HashStatusChip(
                     icon: Icons.error,
                     label: '${progress.mismatched} mismatch',
-                    color: Colors.red,
+                    color: theme.colorScheme.error,
                   ),
                   const SizedBox(width: 8),
                   _HashStatusChip(
                     icon: Icons.help_outline,
                     label: '${progress.skipped} skipped',
-                    color: Colors.grey,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                   ),
                   const Spacer(),
                   TextButton.icon(
@@ -341,11 +362,15 @@ class _StatsPageState extends State<StatsPage> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.verified, color: Colors.green, size: 20),
+                    Icon(
+                      Icons.verified,
+                      color: theme.colorScheme.tertiary,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'All ${progress.passed} files verified successfully',
-                      style: TextStyle(color: Colors.green.shade700),
+                      style: TextStyle(color: theme.colorScheme.tertiary),
                     ),
                   ],
                 ),
@@ -362,8 +387,8 @@ class _StatsPageState extends State<StatsPage> {
         ? Icons.warning_amber
         : Icons.close;
     final color = r.status == HashCheckStatus.missing
-        ? Colors.orange
-        : Colors.red;
+        ? theme.colorScheme.error.withValues(alpha: 0.7)
+        : theme.colorScheme.error;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -384,16 +409,16 @@ class _StatsPageState extends State<StatsPage> {
         childrenPadding: const EdgeInsets.only(left: 16, bottom: 8),
         children: [
           if (r.status == HashCheckStatus.mismatch) ...[
-            _detailRow('Expected', r.expectedHash ?? ''),
-            _detailRow('Actual', r.actualHash ?? ''),
+            _detailRow('Expected', r.expectedHash ?? '', theme),
+            _detailRow('Actual', r.actualHash ?? '', theme),
           ],
-          _detailRow('Size', r.sizeFormatted),
+          _detailRow('Size', r.sizeFormatted, theme),
         ],
       ),
     );
   }
 
-  Widget _detailRow(String label, String value) {
+  Widget _detailRow(String label, String value, ThemeData theme) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -402,7 +427,10 @@ class _StatsPageState extends State<StatsPage> {
             width: 72,
             child: Text(
               label,
-              style: const TextStyle(fontSize: 11, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
             ),
           ),
           Expanded(
@@ -546,7 +574,7 @@ class _StatsPageState extends State<StatsPage> {
     }
 
     final items = data.length > 8 ? data.sublist(0, 8) : data;
-    final colors = _generateColors(items.length);
+    final colors = _generateColors(items.length, theme.colorScheme);
 
     return Card(
       child: Padding(
@@ -638,12 +666,12 @@ class _StatsPageState extends State<StatsPage> {
                     if (sfwRatio > 0)
                       Expanded(
                         flex: (_sfwCount * 1000).round(),
-                        child: Container(color: Colors.green.shade400),
+                        child: Container(color: theme.colorScheme.tertiary),
                       ),
                     if (nsfwRatio > 0)
                       Expanded(
                         flex: (_nsfwCount * 1000).round(),
-                        child: Container(color: Colors.red.shade400),
+                        child: Container(color: theme.colorScheme.error),
                       ),
                   ],
                 ),
@@ -654,15 +682,18 @@ class _StatsPageState extends State<StatsPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _legendDot(Colors.green.shade400, 'SFW'),
-                const SizedBox(width: 24),
-                _legendDot(Colors.red.shade400, 'NSFW'),
+                _legendDot(theme.colorScheme.tertiary, 'SFW'),
+                const SizedBox(width: 16),
+                _legendDot(theme.colorScheme.error, 'NSFW'),
               ],
             ),
             const SizedBox(height: 8),
             Text(
               'SFW ${(sfwRatio * 100).toStringAsFixed(1)}%  ·  NSFW ${(nsfwRatio * 100).toStringAsFixed(1)}%',
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 13,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -722,11 +753,11 @@ class _StatsPageState extends State<StatsPage> {
           if (rank == 1) {
             rankColor = Colors.amber.shade700;
           } else if (rank == 2) {
-            rankColor = Colors.grey.shade500;
+            rankColor = theme.colorScheme.onSurface.withValues(alpha: 0.5);
           } else if (rank == 3) {
-            rankColor = Colors.brown.shade400;
+            rankColor = theme.colorScheme.tertiary.withValues(alpha: 0.7);
           } else {
-            rankColor = Colors.grey;
+            rankColor = theme.colorScheme.onSurface.withValues(alpha: 0.4);
           }
 
           return ListTile(
@@ -838,17 +869,18 @@ class _StatsPageState extends State<StatsPage> {
   // ---------------------------------------------------------------------------
   // Color generation
   // ---------------------------------------------------------------------------
-  List<Color> _generateColors(int count) {
-    const base = [
-      Color(0xFF4CAF50),
-      Color(0xFF2196F3),
-      Color(0xFFFF9800),
-      Color(0xFF9C27B0),
-      Color(0xFF00BCD4),
-      Color(0xFFE91E63),
-      Color(0xFF3F51B5),
-      Color(0xFFFF5722),
-    ];
+  List<Color> _generateColors(int count, ColorScheme scheme) {
+    // Derive chart palette from ColorScheme tones.
+    final base = [
+      scheme.primary,
+      scheme.secondary,
+      scheme.tertiary,
+      scheme.error,
+      scheme.primaryContainer,
+      scheme.secondaryContainer,
+      scheme.tertiaryContainer,
+      scheme.errorContainer,
+    ].map((c) => c is MaterialColor ? c : c).toList();
     if (count <= base.length) return base.sublist(0, count);
     return List.generate(count, (i) {
       final hue = (i * 360 / count) % 360;
@@ -897,6 +929,7 @@ class _OverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
@@ -919,7 +952,10 @@ class _OverviewCard extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
             ),
           ],
         ),
@@ -957,6 +993,50 @@ class _HashStatusChip extends StatelessWidget {
           const SizedBox(width: 4),
           Text(label, style: TextStyle(fontSize: 12, color: color)),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Animated section wrapper
+// ---------------------------------------------------------------------------
+
+/// Wraps a section card with a staggered jelly entrance.
+class _AnimatedSection extends StatefulWidget {
+  final int index;
+  final Widget child;
+  const _AnimatedSection({required this.index, required this.child});
+
+  @override
+  State<_AnimatedSection> createState() => _AnimatedSectionState();
+}
+
+class _AnimatedSectionState extends State<_AnimatedSection> {
+  bool _show = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration(milliseconds: widget.index * 80), () {
+      if (mounted) setState(() => _show = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = MediaQuery.of(context).disableAnimations;
+    if (reduced) return widget.child;
+
+    return AnimatedOpacity(
+      opacity: _show ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+      child: AnimatedSlide(
+        offset: _show ? Offset.zero : const Offset(0, 0.06),
+        duration: const Duration(milliseconds: 350),
+        curve: jellyCurve,
+        child: widget.child,
       ),
     );
   }

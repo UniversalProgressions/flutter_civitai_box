@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../animation.dart';
 import 'media_thumbnail.dart';
 import 'model_detail_page.dart';
 
@@ -31,19 +32,22 @@ class ModelCard extends StatelessWidget {
           children: [
             // Thumbnail
             Expanded(
-              child:
-                  firstImagePath != null && File(firstImagePath!).existsSync()
-                  ? MediaThumbnail(filePath: firstImagePath!)
-                  : Container(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      child: Center(
-                        child: Icon(
-                          Icons.image_not_supported,
-                          size: 32,
-                          color: theme.colorScheme.outline,
+              child: Hero(
+                tag: 'model_hero_$modelId',
+                child:
+                    firstImagePath != null && File(firstImagePath!).existsSync()
+                    ? MediaThumbnail(filePath: firstImagePath!)
+                    : Container(
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        child: Center(
+                          child: Icon(
+                            Icons.image_not_supported,
+                            size: 32,
+                            color: theme.colorScheme.outline,
+                          ),
                         ),
                       ),
-                    ),
+              ),
             ),
             // Label
             Padding(
@@ -72,7 +76,7 @@ class ModelCard extends StatelessWidget {
 
   void _showDetail(BuildContext context) {
     Navigator.of(context).push(
-      MaterialPageRoute(
+      JellyPageRoute(
         builder: (_) => ModelDetailPage(
           modelId: modelId,
           modelName: name,
@@ -90,15 +94,8 @@ class _TypeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (type.toLowerCase()) {
-      'checkpoint' => Colors.blue,
-      'lora' => Colors.purple,
-      'vae' => Colors.teal,
-      'controlnet' => Colors.orange,
-      'upscaler' => Colors.green,
-      'textualinversion' => Colors.brown,
-      _ => Colors.grey,
-    };
+    final theme = Theme.of(context);
+    final color = _typeColor(type, theme.colorScheme);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -110,3 +107,14 @@ class _TypeBadge extends StatelessWidget {
     );
   }
 }
+
+Color _typeColor(String type, ColorScheme scheme) =>
+    switch (type.toLowerCase()) {
+      'checkpoint' => scheme.primary,
+      'lora' => scheme.secondary,
+      'vae' => scheme.tertiary,
+      'controlnet' => scheme.error,
+      'upscaler' => scheme.primaryContainer,
+      'textualinversion' => scheme.secondaryContainer,
+      _ => scheme.outline,
+    };

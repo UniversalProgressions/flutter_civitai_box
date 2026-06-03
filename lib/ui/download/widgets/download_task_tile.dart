@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../services/download/download_queue.dart';
 import '../../../services/download/download_task.dart';
+import '../../animation.dart';
 
 /// A single file's download progress within a batch.
 class DownloadTaskTile extends StatelessWidget {
@@ -30,13 +31,7 @@ class DownloadTaskTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 if (task.status == DownloadTaskStatus.downloading) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: task.progress,
-                      minHeight: 4,
-                    ),
-                  ),
+                  JellyProgressBar(value: task.progress, height: 4),
                   const SizedBox(height: 2),
                   Text(
                     '${(task.progress * 100).toStringAsFixed(0)}%  ·  ${task.sizeFormatted}',
@@ -60,10 +55,10 @@ class DownloadTaskTile extends StatelessWidget {
               task.errorMessage != null)
             Tooltip(
               message: task.errorMessage!,
-              child: const Icon(
+              child: Icon(
                 Icons.info_outline,
                 size: 14,
-                color: Colors.red,
+                color: theme.colorScheme.error,
               ),
             ),
           if (task.status == DownloadTaskStatus.failed ||
@@ -86,7 +81,7 @@ class DownloadTaskTile extends StatelessWidget {
   Widget _statusIcon(ThemeData theme) {
     switch (task.status) {
       case DownloadTaskStatus.completed:
-        return const Icon(Icons.check_circle, size: 18, color: Colors.green);
+        return const _JellyCompleteIcon();
       case DownloadTaskStatus.downloading:
         return SizedBox(
           width: 18,
@@ -97,9 +92,13 @@ class DownloadTaskTile extends StatelessWidget {
           ),
         );
       case DownloadTaskStatus.failed:
-        return const Icon(Icons.error, size: 18, color: Colors.red);
+        return Icon(Icons.error, size: 18, color: theme.colorScheme.error);
       case DownloadTaskStatus.cancelled:
-        return const Icon(Icons.cancel, size: 18, color: Colors.grey);
+        return Icon(
+          Icons.cancel,
+          size: 18,
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+        );
       case DownloadTaskStatus.pending:
         return Icon(
           Icons.hourglass_empty,
@@ -107,5 +106,44 @@ class DownloadTaskTile extends StatelessWidget {
           color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
         );
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Jelly-scale complete icon
+// ---------------------------------------------------------------------------
+
+/// Animates a checkmark icon with a springy pop-in:
+/// scale 0 → ~1.3 → 1.0 over ~400ms via [jellyCurve].
+class _JellyCompleteIcon extends StatelessWidget {
+  const _JellyCompleteIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final reduced = MediaQuery.of(context).disableAnimations;
+    if (reduced) {
+      return Icon(
+        Icons.check_circle,
+        size: 18,
+        color: theme.colorScheme.tertiary,
+      );
+    }
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 400),
+      curve: jellyCurve,
+      builder: (_, scale, __) {
+        return Transform.scale(
+          scale: scale,
+          child: Icon(
+            Icons.check_circle,
+            size: 18,
+            color: theme.colorScheme.tertiary,
+          ),
+        );
+      },
+    );
   }
 }

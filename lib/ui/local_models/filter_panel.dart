@@ -7,6 +7,7 @@ import '../../civitai_api/models/enums.dart';
 import '../../db/database.dart';
 import '../../db/dao/saved_search_dao.dart';
 import '../../db/dao/tag_dao.dart';
+import '../../settings/nsfw_settings.dart';
 
 /// Filter state passed back from the panel.
 class ModelFilters {
@@ -31,8 +32,7 @@ class ModelFilters {
       (username != null && username!.isNotEmpty) ||
       types.isNotEmpty ||
       baseModels.isNotEmpty ||
-      tags.isNotEmpty ||
-      nsfw != null;
+      tags.isNotEmpty;
 
   ModelFilters copyWith({
     String? query,
@@ -101,7 +101,9 @@ class _FilterPanelState extends State<FilterPanel> {
   final List<String> _tagSuggestions = [];
   final List<String> _usernameSuggestions = [];
   final List<String> _selectedTags = [];
-  bool? _nsfw;
+
+  // NSFW is now a global setting — we read/write NsfwSettings directly.
+  late NsfwFilter _nsfwMode;
 
   // Saved search
   List<Map<String, Object?>> _savedSearches = [];
@@ -123,7 +125,7 @@ class _FilterPanelState extends State<FilterPanel> {
     _baseModelCtrl = TextEditingController();
     _tagCtrl = TextEditingController();
     _selectedTags.addAll(widget.initial.tags);
-    _nsfw = widget.initial.nsfw;
+    _nsfwMode = NsfwSettings.instance!.mode;
     _loadSavedSearches();
     _typeFocus.addListener(() {
       if (_typeFocus.hasFocus) {
@@ -228,7 +230,6 @@ class _FilterPanelState extends State<FilterPanel> {
     types: _selectedTypes,
     baseModels: _selectedBaseModels,
     tags: _selectedTags,
-    nsfw: _nsfw,
   );
 
   Future<void> _savePreset() async {
@@ -286,7 +287,13 @@ class _FilterPanelState extends State<FilterPanel> {
       _selectedTags
         ..clear()
         ..addAll(filters.tags);
-      _nsfw = filters.nsfw;
+      _nsfwMode = filters.nsfw == null
+          ? NsfwFilter.all
+          : (filters.nsfw! ? NsfwFilter.yes : NsfwFilter.no);
+      // Sync the global setting when loading a preset that has an NSFW filter.
+      if (filters.nsfw != null) {
+        NsfwSettings.instance!.mode = _nsfwMode;
+      }
     });
   }
 
@@ -331,7 +338,6 @@ class _FilterPanelState extends State<FilterPanel> {
         types: _selectedTypes,
         baseModels: _selectedBaseModels,
         tags: _selectedTags,
-        nsfw: _nsfw,
       ),
     );
     Navigator.of(context).pop();
@@ -476,20 +482,29 @@ class _FilterPanelState extends State<FilterPanel> {
                 const Spacer(),
                 ChoiceChip(
                   label: const Text('All'),
-                  selected: _nsfw == null,
-                  onSelected: (_) => setState(() => _nsfw = null),
+                  selected: _nsfwMode == NsfwFilter.all,
+                  onSelected: (_) {
+                    setState(() => _nsfwMode = NsfwFilter.all);
+                    NsfwSettings.instance!.mode = NsfwFilter.all;
+                  },
                 ),
                 const SizedBox(width: 8),
                 ChoiceChip(
                   label: const Text('Yes'),
-                  selected: _nsfw == true,
-                  onSelected: (_) => setState(() => _nsfw = true),
+                  selected: _nsfwMode == NsfwFilter.yes,
+                  onSelected: (_) {
+                    setState(() => _nsfwMode = NsfwFilter.yes);
+                    NsfwSettings.instance!.mode = NsfwFilter.yes;
+                  },
                 ),
                 const SizedBox(width: 8),
                 ChoiceChip(
                   label: const Text('No'),
-                  selected: _nsfw == false,
-                  onSelected: (_) => setState(() => _nsfw = false),
+                  selected: _nsfwMode == NsfwFilter.no,
+                  onSelected: (_) {
+                    setState(() => _nsfwMode = NsfwFilter.no);
+                    NsfwSettings.instance!.mode = NsfwFilter.no;
+                  },
                 ),
               ],
             ),

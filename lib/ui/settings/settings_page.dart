@@ -31,13 +31,10 @@ class _SettingsPageState extends State<SettingsPage> {
   // Controllers
   late final TextEditingController _basePathCtrl;
   late final TextEditingController _civitaiTokenCtrl;
-  late final TextEditingController _gopeedHostCtrl;
-  late final TextEditingController _gopeedTokenCtrl;
   late final TextEditingController _httpProxyCtrl;
 
   // Visibility toggles for token fields
   bool _civitaiTokenVisible = false;
-  bool _gopeedTokenVisible = false;
 
   bool _saving = false;
   String? _error;
@@ -53,8 +50,6 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _basePathCtrl = TextEditingController();
     _civitaiTokenCtrl = TextEditingController();
-    _gopeedHostCtrl = TextEditingController();
-    _gopeedTokenCtrl = TextEditingController();
     _httpProxyCtrl = TextEditingController();
     _load();
   }
@@ -65,8 +60,6 @@ class _SettingsPageState extends State<SettingsPage> {
     if (s == null) return;
     _basePathCtrl.text = s.basePath;
     _civitaiTokenCtrl.text = s.civitaiApiToken;
-    _gopeedHostCtrl.text = s.gopeedApiHost;
-    _gopeedTokenCtrl.text = s.gopeedApiToken ?? '';
     _httpProxyCtrl.text = s.httpProxy ?? '';
     setState(() => _error = null);
     _loadDbPath();
@@ -106,8 +99,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     _basePathCtrl.dispose();
     _civitaiTokenCtrl.dispose();
-    _gopeedHostCtrl.dispose();
-    _gopeedTokenCtrl.dispose();
     _httpProxyCtrl.dispose();
     super.dispose();
   }
@@ -129,10 +120,6 @@ class _SettingsPageState extends State<SettingsPage> {
       svc.updateSettings({
         'basePath': _basePathCtrl.text.trim(),
         'civitai_api_token': _civitaiTokenCtrl.text.trim(),
-        'gopeed_api_host': _gopeedHostCtrl.text.trim(),
-        'gopeed_api_token': _gopeedTokenCtrl.text.trim().isEmpty
-            ? null
-            : _gopeedTokenCtrl.text.trim(),
         'http_proxy': _httpProxyCtrl.text.trim().isEmpty
             ? null
             : _httpProxyCtrl.text.trim(),
@@ -277,56 +264,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                       validator: (v) =>
                           (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ── Downloader ──
-            _buildSectionHeader('Downloader'),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Gopeed Host', style: theme.textTheme.titleSmall),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _gopeedHostCtrl,
-                      decoration: const InputDecoration(
-                        hintText: 'http://localhost:8080',
-                        prefixIcon: Icon(Icons.dns_outlined),
-                      ),
-                      validator: (v) =>
-                          (v == null || v.trim().isEmpty) ? 'Required' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Gopeed API Token (optional)',
-                      style: theme.textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 8),
-                    TextFormField(
-                      controller: _gopeedTokenCtrl,
-                      obscureText: !_gopeedTokenVisible,
-                      decoration: InputDecoration(
-                        hintText: 'Only if Gopeed has auth enabled',
-                        prefixIcon: const Icon(Icons.key_outlined),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _gopeedTokenVisible
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                          ),
-                          onPressed: () => setState(
-                            () => _gopeedTokenVisible = !_gopeedTokenVisible,
-                          ),
-                        ),
-                      ),
                     ),
                   ],
                 ),

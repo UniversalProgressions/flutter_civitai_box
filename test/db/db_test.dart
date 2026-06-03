@@ -421,6 +421,75 @@ void main() {
       const fileDao = ModelVersionFileDao();
       expect((await fileDao.getByModelVersion(1805971)), isEmpty);
     });
+
+    test('model survives when other versions remain', () async {
+      // Insert a second version for the same model.
+      final fixture = _fixture('modelVersion_endpoint_response.json');
+      final modelData = fixture['model'] as Map<String, dynamic>;
+      final images = (fixture['images'] as List)
+          .map(
+            (img) => {
+              'id': _imageId(img),
+              'url': img['url'],
+              'nsfwLevel': img['nsfwLevel'],
+              'width': img['width'],
+              'height': img['height'],
+              'hash': img['hash'],
+              'type': img['type'],
+            },
+          )
+          .toList();
+      final files = (fixture['files'] as List).map((f) {
+        return {
+          'id': f['id'],
+          'sizeKB': f['sizeKB'],
+          'name': f['name'],
+          'type': f['type'],
+          'downloadUrl': f['downloadUrl'],
+        };
+      }).toList();
+
+      const repo = ModelVersionRepository();
+      await repo.upsertVersion(
+        id: 999001,
+        modelId: fixture['modelId'],
+        name: 'v2',
+        baseModelName: fixture['baseModel'],
+        baseModelTypeName: fixture['baseModelType'],
+        nsfwLevel: fixture['nsfwLevel'],
+        versionJson: fixture,
+        modelJson: modelData,
+        modelName: modelData['name'],
+        creatorJson: null,
+        modelTypeName: modelData['type'],
+        tagNames: [],
+        modelNsfw: modelData['nsfw'] ?? false,
+        modelNsfwLevel: 0,
+        images: images,
+        files: files,
+      );
+
+      // Delete only the first version.
+      final result = await repo.deleteVersion(1805971);
+
+      expect(result.deleted, true);
+      expect(result.modelDeleted, false); // v2 still exists
+      expect(result.fileCount, 1);
+
+      // First version gone
+      const versionDao = ModelVersionDao();
+      expect(await versionDao.getById(1805971), isNull);
+
+      // Model and second version survive
+      const modelDao = ModelDao();
+      expect(await modelDao.getById(1595884), isNotNull);
+      expect(await versionDao.getById(999001), isNotNull);
+    });
+
+    test('deleteVersion on non-existent version throws', () async {
+      const repo = ModelVersionRepository();
+      expect(() => repo.deleteVersion(12345678), throwsA(isA<Exception>()));
+    });
   });
 
   // =========================================================================
@@ -496,6 +565,27 @@ void main() {
       expect(result.results[1].modelDeleted, true); // last version → model gone
       expect(result.results[2].success, false);
       expect(result.results[2].error, isNotNull);
+    });
+
+    test('empty list returns zero results', () async {
+      const repo = ModelVersionRepository();
+      final result = await repo.deleteMultipleVersions([]);
+      expect(result.total, 0);
+      expect(result.succeeded, 0);
+      expect(result.failed, 0);
+      expect(result.results, isEmpty);
+    });
+
+    test('all nonexistent returns failed for each', () async {
+      const repo = ModelVersionRepository();
+      final result = await repo.deleteMultipleVersions([999991, 999992]);
+      expect(result.total, 2);
+      expect(result.succeeded, 0);
+      expect(result.failed, 2);
+      for (final r in result.results) {
+        expect(r.success, false);
+        expect(r.error, isNotNull);
+      }
     });
   });
 

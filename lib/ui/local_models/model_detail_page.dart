@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:io' show File, Platform, Process;
+import 'dart:io' show Directory, File, Platform, Process;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +11,7 @@ import '../../db/db.dart';
 import '../../services/file_layout.dart';
 import '../../services/hash_check_service.dart';
 import '../../settings/settings.dart';
+import '../../services/model_refresh_bus.dart';
 import 'markdown_note_viewer.dart';
 import 'media_thumbnail.dart';
 
@@ -160,11 +161,115 @@ class _ModelDetailPageState extends State<ModelDetailPage>
     super.dispose();
   }
 
+  Future<void> _confirmDelete() async {
+    final version = _versions[_tabController!.index];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Version'),
+        content: Text(
+          'Delete "${version.name}" and all its files?\n\n'
+          'This will remove the version folder from disk and its database records.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _deleteVersion(version);
+  }
+
+  Future<void> _deleteVersion(_VersionDetail version) async {
+    // 1. Delete from file system
+    final versionDir = Directory(
+      getModelVersionPath(
+        _basePath,
+        version.typeName,
+        widget.modelId,
+        version.id,
+      ),
+    );
+    if (versionDir.existsSync()) {
+      versionDir.deleteSync(recursive: true);
+    }
+
+    // 2. Delete from database
+    final repo = ModelVersionRepository();
+    final (:deleted, :modelDeleted, fileCount: _, imageCount: _) = await repo
+        .deleteVersion(version.id);
+
+    if (!mounted) return;
+
+    // 3. If model has no versions left, delete the model folder too
+    if (modelDeleted) {
+      final modelDir = Directory(
+        getModelIdPath(_basePath, version.typeName, widget.modelId),
+      );
+      if (modelDir.existsSync()) {
+        modelDir.deleteSync(recursive: true);
+      }
+    }
+
+    // 4. Notify refresh bus
+    ModelRefreshBus.instance.notify();
+
+    if (!deleted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete version')),
+        );
+      }
+      return;
+    }
+
+    // 4. Reload or pop
+    if (modelDeleted || _versions.length == 1) {
+      // Last version — pop back
+      if (mounted) Navigator.of(context).pop();
+    } else {
+      // Reload remaining versions
+      _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: Text(widget.modelName)),
+      appBar: AppBar(
+        title: Text(widget.modelName),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (action) {
+              if (action == 'delete') _confirmDelete();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                    SizedBox(width: 8),
+                    Text('Delete', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
       body: _loading || _tabController == null
           ? const Center(child: CircularProgressIndicator())
           : _versions.isEmpty
