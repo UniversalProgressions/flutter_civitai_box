@@ -201,6 +201,7 @@ class _DownloadPageState extends State<DownloadPage> {
 
     final svc = await SettingsService.getInstance();
     final basePath = svc.settingsOrNull?.basePath ?? '';
+    final apiToken = svc.settingsOrNull?.civitaiApiToken ?? '';
 
     // Write model-level JSON to disk (retain all fields including modelVersions)
     await _writeModelJson(basePath, model.type, model.id, model.toJson());
@@ -267,46 +268,53 @@ class _DownloadPageState extends State<DownloadPage> {
         ),
       ];
 
-      // Model files
-      final modelTasks = vd.files.where((f) => f.type == 'Model').map((f) {
+      // Model files — resolve URLs to embed API token
+      final modelTasks = <DownloadTask>[];
+      for (final f in vd.files.where((f) => f.type == 'Model')) {
+        final resolvedUrl = await _resolveDownloadUrl(f.downloadUrl, apiToken);
         final filesDir = getFilesDir(basePath, model.type, model.id, vd.id);
-        return DownloadTask(
-          id: '${batchId}-f-${f.id}',
-          batchId: batchId,
-          modelId: model.id,
-          modelVersionId: vd.id,
-          fileName: f.name,
-          fileSizeKb: f.sizeKB,
-          downloadUrl: f.downloadUrl,
-          targetPath: '$filesDir/${f.name}',
-          fileType: DownloadFileType.model,
-          createdAt: DateTime.now().toIso8601String(),
-          updatedAt: DateTime.now().toIso8601String(),
+        modelTasks.add(
+          DownloadTask(
+            id: '${batchId}-f-${f.id}',
+            batchId: batchId,
+            modelId: model.id,
+            modelVersionId: vd.id,
+            fileName: f.name,
+            fileSizeKb: f.sizeKB,
+            downloadUrl: resolvedUrl,
+            targetPath: '$filesDir/${f.name}',
+            fileType: DownloadFileType.model,
+            createdAt: DateTime.now().toIso8601String(),
+            updatedAt: DateTime.now().toIso8601String(),
+          ),
         );
-      }).toList();
+      }
 
-      // Media files
-      final mediaTasks = vd.images
-          .where((img) => (img.type ?? 'image') == 'image')
-          .map((img) {
-            final imageId = extractIdFromImageUrl(img.url) ?? 0;
-            final ext = _extensionFromUrl(img.url);
-            final mediaDir = getMediaDir(basePath, model.type, model.id, vd.id);
-            return DownloadTask(
-              id: '${batchId}-m-$imageId',
-              batchId: batchId,
-              modelId: model.id,
-              modelVersionId: vd.id,
-              fileName: '$imageId$ext',
-              fileSizeKb: 0,
-              downloadUrl: img.url,
-              targetPath: '$mediaDir/$imageId$ext',
-              fileType: DownloadFileType.media,
-              createdAt: DateTime.now().toIso8601String(),
-              updatedAt: DateTime.now().toIso8601String(),
-            );
-          })
-          .toList();
+      // Media files — resolve URLs to embed API token
+      final mediaTasks = <DownloadTask>[];
+      for (final img in vd.images.where(
+        (img) => (img.type ?? 'image') == 'image',
+      )) {
+        final resolvedUrl = await _resolveDownloadUrl(img.url, apiToken);
+        final imageId = extractIdFromImageUrl(img.url) ?? 0;
+        final ext = _extensionFromUrl(img.url);
+        final mediaDir = getMediaDir(basePath, model.type, model.id, vd.id);
+        mediaTasks.add(
+          DownloadTask(
+            id: '${batchId}-m-$imageId',
+            batchId: batchId,
+            modelId: model.id,
+            modelVersionId: vd.id,
+            fileName: '$imageId$ext',
+            fileSizeKb: 0,
+            downloadUrl: resolvedUrl,
+            targetPath: '$mediaDir/$imageId$ext',
+            fileType: DownloadFileType.media,
+            createdAt: DateTime.now().toIso8601String(),
+            updatedAt: DateTime.now().toIso8601String(),
+          ),
+        );
+      }
 
       await DownloadQueue.instance.enqueueBatch(
         batchId: batchId,
@@ -338,6 +346,21 @@ class _DownloadPageState extends State<DownloadPage> {
     final ext = path.substring(dotIdx);
     final qIdx = ext.indexOf('?');
     return qIdx == -1 ? ext : ext.substring(0, qIdx);
+  }
+
+  /// Resolve a download URL through CivitAI's redirect chain, embedding the
+  /// API token in the final CDN URL so the download works without headers.
+  Future<String> _resolveDownloadUrl(String url, String apiToken) async {
+    if (apiToken.isEmpty) return url;
+
+    try {
+      final api = CivitaiApiClient(apiKey: apiToken);
+      final resolved = await api.modelVersions.resolveFileDownloadUrl(url);
+      return resolved;
+    } catch (e) {
+      logger.warning('Failed to resolve download URL, using raw URL: $e');
+      return url; // fall back to raw URL on failure
+    }
   }
 
   // ── API JSON writers ──

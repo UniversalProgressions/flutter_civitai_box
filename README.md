@@ -28,7 +28,7 @@ A desktop application for browsing, managing, and downloading [CivitAI](https://
 
 ### ⚙️ Settings
 
-- Configure model storage path, CivitAI API token, Gopeed downloader host, and HTTP proxy
+- Configure model storage path, CivitAI API token, and HTTP proxy
 - One-click model scanner with progress reporting
 
 ## Screenshot
