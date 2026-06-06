@@ -32,6 +32,11 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
   /// Parallel list: first image path for each model in [_models].
   final List<String?> _firstImages = [];
 
+  /// Incremented at the start of each [_fetch]; stale generations are
+  /// discarded to prevent length mismatches between [_models] and
+  /// [_firstImages] when multiple fetches overlap.
+  int _fetchGen = 0;
+
   final _jumpCtrl = TextEditingController();
   final _jumpFocus = FocusNode();
 
@@ -62,6 +67,7 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
   }
 
   Future<void> _fetch() async {
+    final gen = ++_fetchGen;
     setState(() => _loading = true);
     final db = await CivitaiDatabase.instance;
 
@@ -136,14 +142,20 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
     // Attach first image path for each model
     final settings = await SettingsService.getInstance();
     final basePath = settings.settingsOrNull?.basePath ?? '';
-    _firstImages.clear();
+    final firstImages = <String?>[];
     for (final row in rows) {
-      _firstImages.add(await _findFirstImage(db, basePath, row));
+      firstImages.add(await _findFirstImage(db, basePath, row));
     }
+
+    // Discard if a newer fetch has started
+    if (gen != _fetchGen) return;
 
     if (mounted) {
       setState(() {
         _models = rows;
+        _firstImages
+          ..clear()
+          ..addAll(firstImages);
         _loading = false;
         _gridVersion++;
       });
@@ -244,6 +256,11 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
                                 itemCount: _models.length,
                                 itemBuilder: (_, i) {
                                   final m = _models[i];
+                                  // Guard: if _firstImages is out of sync
+                                  // (stale fetch), show no image.
+                                  final img = i < _firstImages.length
+                                      ? _firstImages[i]
+                                      : null;
                                   return _AnimatedModelCard(
                                     index: i,
                                     child: ModelCard(
@@ -251,7 +268,7 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
                                       name: m['name'] as String,
                                       typeName:
                                           m['type_name'] as String? ?? 'Other',
-                                      firstImagePath: _firstImages[i],
+                                      firstImagePath: img,
                                     ),
                                   );
                                 },

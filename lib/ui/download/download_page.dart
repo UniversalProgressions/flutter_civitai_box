@@ -232,7 +232,7 @@ class _DownloadPageState extends State<DownloadPage> {
       // API JSON tasks (already written, marked completed)
       final apiJsonTasks = [
         DownloadTask(
-          id: '${batchId}-json-model',
+          id: '$batchId-json-model',
           batchId: batchId,
           modelId: model.id,
           modelVersionId: vd.id,
@@ -247,7 +247,7 @@ class _DownloadPageState extends State<DownloadPage> {
           updatedAt: DateTime.now().toIso8601String(),
         ),
         DownloadTask(
-          id: '${batchId}-json-version',
+          id: '$batchId-json-version',
           batchId: batchId,
           modelId: model.id,
           modelVersionId: vd.id,
@@ -275,7 +275,7 @@ class _DownloadPageState extends State<DownloadPage> {
         final filesDir = getFilesDir(basePath, model.type, model.id, vd.id);
         modelTasks.add(
           DownloadTask(
-            id: '${batchId}-f-${f.id}',
+            id: '$batchId-f-${f.id}',
             batchId: batchId,
             modelId: model.id,
             modelVersionId: vd.id,
@@ -301,7 +301,7 @@ class _DownloadPageState extends State<DownloadPage> {
         final mediaDir = getMediaDir(basePath, model.type, model.id, vd.id);
         mediaTasks.add(
           DownloadTask(
-            id: '${batchId}-m-$imageId',
+            id: '$batchId-m-$imageId',
             batchId: batchId,
             modelId: model.id,
             modelVersionId: vd.id,
@@ -709,7 +709,7 @@ class _DownloadPageState extends State<DownloadPage> {
                           width: 80,
                           height: 80,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             width: 80,
                             height: 80,
                             color: theme.colorScheme.surfaceContainerHighest,

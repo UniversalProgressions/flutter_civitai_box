@@ -87,6 +87,7 @@ enum CheckpointType {
 
 /// Base model architecture.
 enum BaseModel {
+  anima('Anima'),
   auraFlow('Aura Flow'),
   cogVideoX('CogVideoX'),
   flux1D('Flux .1 D'),

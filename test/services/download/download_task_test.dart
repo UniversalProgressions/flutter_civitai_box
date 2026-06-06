@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 void main() {
   const now = '2026-06-02T00:00:00.000';
 
-  DownloadTask _makeTask({
+  DownloadTask makeTask({
     String id = 't1',
     String batchId = 'b1',
     String status = 'pending',
@@ -34,7 +34,7 @@ void main() {
   // =========================================================================
   group('DownloadTask', () {
     test('fromRow and toRow round-trip', () {
-      final task = _makeTask(status: 'downloading', progress: 0.5);
+      final task = makeTask(status: 'downloading', progress: 0.5);
       final row = task.toRow();
       final restored = DownloadTask.fromRow(row);
 
@@ -67,9 +67,9 @@ void main() {
     });
 
     test('sizeFormatted', () {
-      expect(_makeTask(sizeKb: 500).sizeFormatted, equals('500 KB'));
-      expect(_makeTask(sizeKb: 2048).sizeFormatted, equals('2 MB'));
-      expect(_makeTask(sizeKb: 2097152).sizeFormatted, equals('2.0 GB'));
+      expect(makeTask(sizeKb: 500).sizeFormatted, equals('500 KB'));
+      expect(makeTask(sizeKb: 2048).sizeFormatted, equals('2 MB'));
+      expect(makeTask(sizeKb: 2097152).sizeFormatted, equals('2.0 GB'));
     });
   });
 
@@ -79,9 +79,9 @@ void main() {
   group('DownloadQueueState', () {
     test('batches groups tasks by batchId', () {
       final tasks = [
-        _makeTask(id: '1', batchId: 'b1', status: 'completed'),
-        _makeTask(id: '2', batchId: 'b1', status: 'completed'),
-        _makeTask(id: '3', batchId: 'b2', status: 'pending'),
+        makeTask(id: '1', batchId: 'b1', status: 'completed'),
+        makeTask(id: '2', batchId: 'b1', status: 'completed'),
+        makeTask(id: '3', batchId: 'b2', status: 'pending'),
       ];
       final state = DownloadQueueState(
         tasks: tasks,
@@ -97,10 +97,10 @@ void main() {
 
     test('activeBatches returns non-completed batches', () {
       final tasks = [
-        _makeTask(id: '1', batchId: 'b1', status: 'completed'),
-        _makeTask(id: '2', batchId: 'b1', status: 'completed'),
-        _makeTask(id: '3', batchId: 'b2', status: 'pending'),
-        _makeTask(id: '4', batchId: 'b3', status: 'failed'),
+        makeTask(id: '1', batchId: 'b1', status: 'completed'),
+        makeTask(id: '2', batchId: 'b1', status: 'completed'),
+        makeTask(id: '3', batchId: 'b2', status: 'pending'),
+        makeTask(id: '4', batchId: 'b3', status: 'failed'),
       ];
       final state = DownloadQueueState(
         tasks: tasks,
@@ -117,10 +117,10 @@ void main() {
 
     test('completedBatchList returns only fully completed batches', () {
       final tasks = [
-        _makeTask(id: '1', batchId: 'b1', status: 'completed'),
-        _makeTask(id: '2', batchId: 'b1', status: 'completed'),
-        _makeTask(id: '3', batchId: 'b2', status: 'completed'),
-        _makeTask(id: '4', batchId: 'b2', status: 'failed'),
+        makeTask(id: '1', batchId: 'b1', status: 'completed'),
+        makeTask(id: '2', batchId: 'b1', status: 'completed'),
+        makeTask(id: '3', batchId: 'b2', status: 'completed'),
+        makeTask(id: '4', batchId: 'b2', status: 'failed'),
       ];
       final state = DownloadQueueState(
         tasks: tasks,

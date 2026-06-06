@@ -23,7 +23,7 @@ void main() {
     await CivitaiDatabase.instance.then((d) => d.close());
   });
 
-  DownloadTask _makeTask({
+  DownloadTask makeTask({
     required String id,
     required String batchId,
     String status = 'pending',
@@ -54,7 +54,7 @@ void main() {
   group('DownloadQueue DB logic', () {
     test('enqueueBatch persists tasks to DB', () async {
       final apiJsonTasks = [
-        _makeTask(
+        makeTask(
           id: 'a1',
           batchId: 'b1',
           fileType: 'apiJson',
@@ -69,7 +69,7 @@ void main() {
       }
 
       final modelTasks = [
-        _makeTask(
+        makeTask(
           id: 'm1',
           batchId: 'b1',
           fileType: 'model',
@@ -79,7 +79,7 @@ void main() {
       ];
 
       final mediaTasks = [
-        _makeTask(
+        makeTask(
           id: 'p1',
           batchId: 'b1',
           fileType: 'media',
@@ -97,9 +97,9 @@ void main() {
 
     test('loadActive on init restores pending tasks', () async {
       await db.insertAll([
-        _makeTask(id: 't1', batchId: 'b1', status: 'pending'),
-        _makeTask(id: 't2', batchId: 'b1', status: 'downloading'),
-        _makeTask(id: 't3', batchId: 'b2', status: 'completed'),
+        makeTask(id: 't1', batchId: 'b1', status: 'pending'),
+        makeTask(id: 't2', batchId: 'b1', status: 'downloading'),
+        makeTask(id: 't3', batchId: 'b2', status: 'completed'),
       ]);
 
       final active = await db.loadActive();
@@ -109,9 +109,9 @@ void main() {
 
     test('cancelBatch marks all tasks in batch as cancelled', () async {
       final tasks = [
-        _makeTask(id: 't1', batchId: 'b1', status: 'pending'),
-        _makeTask(id: 't2', batchId: 'b1', status: 'downloading'),
-        _makeTask(id: 't3', batchId: 'b2', status: 'pending'),
+        makeTask(id: 't1', batchId: 'b1', status: 'pending'),
+        makeTask(id: 't2', batchId: 'b1', status: 'downloading'),
+        makeTask(id: 't3', batchId: 'b2', status: 'pending'),
       ];
       await db.insertAll(tasks);
 
@@ -134,28 +134,28 @@ void main() {
   group('DownloadQueueState grouping', () {
     test('batches with mixed file types', () {
       final tasks = [
-        _makeTask(
+        makeTask(
           id: '1',
           batchId: 'b1',
           fileType: 'apiJson',
           fileName: 'api.json',
           status: 'completed',
         ),
-        _makeTask(
+        makeTask(
           id: '2',
           batchId: 'b1',
           fileType: 'model',
           fileName: 'model.safetensors',
           status: 'completed',
         ),
-        _makeTask(
+        makeTask(
           id: '3',
           batchId: 'b1',
           fileType: 'media',
           fileName: '1.jpeg',
           status: 'completed',
         ),
-        _makeTask(
+        makeTask(
           id: '4',
           batchId: 'b2',
           fileType: 'model',
@@ -178,8 +178,8 @@ void main() {
 
     test('partially failed batch appears in activeBatches', () {
       final tasks = [
-        _makeTask(id: '1', batchId: 'b1', status: 'completed'),
-        _makeTask(id: '2', batchId: 'b1', status: 'failed'),
+        makeTask(id: '1', batchId: 'b1', status: 'completed'),
+        makeTask(id: '2', batchId: 'b1', status: 'failed'),
       ];
 
       final state = DownloadQueueState(
