@@ -1,320 +1,497 @@
 # Magazine Download System Design
 
-> "装弹-扣扳机" 批量下载模式 — 逐个收集 model version ID，一次性串行解析并入队。
+> "Load → Review → Fire" — a staging area for model version downloads.
+> Each round is a ModelVersion. Load fetches and persists API data. Fire processes rounds one at a time with jam-on-failure semantics.
 
 ---
 
-## 设计哲学
+## Design Philosophy
 
-| 原则 | 决策 |
-|------|------|
-| **输入** | 逐个添加（一个输入框 + "装弹"按钮），不是文本框粘贴 |
-| **持久化** | `download_magazine` 表 — app 重启不丢失 |
-| **解析** | 串行 — 一个接一个，可看到每个 version 的实时状态 |
-| **进度** | 仅显示 "解析中 3/15" + 每个 item 的状态 |
-| **错误** | Skip & Continue — 失败跳过，继续下一个，最后汇总 |
-| **重复检测** | 已下载 → 跳过 / 已在队列 → 跳过 / 弹匣内去重 |
-| **UI** | Download 页面新增 Tab（Fetch + Magazine） |
-
----
-
-## 隐喻映射
-
-| 隐喻 | 实现 |
-|------|------|
-| **弹匣 (Magazine)** | `download_magazine` 表，存储待处理的 version ID 列表 |
-| **装弹 (Load)** | 用户在输入框输入一个 version ID，点击 "装弹" 按钮，添加到弹匣 |
-| **子弹 (Round)** | 弹匣中的一行 — 一个待解析的 model version ID |
-| **扣扳机 (Fire)** | 点击 "Fire" 按钮，串行解析弹匣中所有 pending 项 |
-| **退弹 (Unload)** | 从弹匣中移除某个未处理的 item |
-| **清空弹匣 (Clear)** | 一键清空所有 pending / 已完成 item |
+| Principle | Decision |
+|-----------|----------|
+| **Input** | Single model version ID → Load fetches API data immediately |
+| **Review** | Parsed model name, version name, base model, file count, total size — user can remove before firing |
+| **Persistence** | `download_magazine` table — survives app restart |
+| **Concurrency** | Single round at a time during Fire — no parallel processing |
+| **Retry** | Max 3 retries on failure, then **JAM** (stop entirely) |
+| **Error handling** | Any exception counts as failure; jam means user must intervene (skip or retry) |
+| **Completion** | Successful rounds are **deleted** from the table |
+| **JSON files** | Written to disk **after** all downloads finish, as the final step |
+| **Relationship to `download_task`** | Magazine is the staging layer; `download_task` is the execution layer — they coexist |
+| **Public API** | Both `load()` and `fire()` exposed for external callers (e.g. Rust via `flutter_rust_bridge`) |
+| **UI** | Download page gains a Magazine tab; existing Fetch tab is retained as "advanced" option |
 
 ---
 
-## 数据库
+## Metaphor Mapping
 
-### `download_magazine` 表
+| Metaphor | Implementation |
+|----------|----------------|
+| **Magazine** | `download_magazine` table — holds all pending/failed/skipped rounds |
+| **Load (装弹)** | Call `load(versionId)` → fetch model + version JSON from CivitAI API → store parsed fields + raw JSON in SQLite |
+| **Round (子弹)** | One row in the magazine — a model version with its full API data |
+| **Fire (扣扳机)** | Call `fire()` → process rounds one at a time, each as a DownloadQueue batch |
+| **Jam (卡壳)** | A round fails 3 times → `failed` status, fire stops, user must intervene |
+| **Unjam** | User manually skips or retries the failed round, then re-fires |
+| **Unload (退弹)** | Remove a pending/skipped round from the magazine |
+
+---
+
+## Architecture Overview
+
+```
+┌──────────────────────────────────────────────────┐
+│                  download_magazine                │
+│  STAGING LAYER — "WHAT to download"              │
+│  Unit: ModelVersion (one row = one round)         │
+│  Lifecycle: pending → firing → deleted / failed   │
+│  Stores: display fields + full API JSON           │
+└────────────────────┬─────────────────────────────┘
+                     │ Fire creates DownloadTask entries
+                     ▼
+┌──────────────────────────────────────────────────┐
+│                   download_task                   │
+│  EXECUTION LAYER — "HOW each file is downloading" │
+│  Unit: individual file (many rows per version)    │
+│  Lifecycle: pending → downloading → completed     │
+│  Managed by: DownloadQueue (unchanged)            │
+└──────────────────────────────────────────────────┘
+```
+
+These two tables **do not merge**. They serve different granularities:
+
+- Magazine = planning (which versions to download?)
+- DownloadTask = execution (what's the progress of each file?)
+
+Magazine **replaces the current "preparation phase"** in `DownloadPage._startDownload()`. The logic of fetching API data, writing JSON files, and building DownloadTask objects moves into the Load + Fire cycle.
+
+---
+
+## Database
+
+### `download_magazine` Table
 
 ```sql
 CREATE TABLE download_magazine (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   model_version_id  INTEGER NOT NULL UNIQUE,
+  model_id          INTEGER NOT NULL,
+  model_name        TEXT    NOT NULL,
+  version_name      TEXT,
+  base_model        TEXT,
+  model_type        TEXT,
+  file_count        INTEGER NOT NULL DEFAULT 0,
+  total_size_kb     REAL    NOT NULL DEFAULT 0,
+  model_json        TEXT    NOT NULL,       -- GET /api/v1/models/{id}  (full response)
+  version_json      TEXT    NOT NULL,       -- GET /api/v1/model-versions/{id} (full response)
   status            TEXT    NOT NULL DEFAULT 'pending',
-                    -- 'pending' | 'resolving' | 'resolved' | 'skipped_duplicate' | 'skipped_exists' | 'failed'
+                    -- 'pending' | 'firing' | 'failed' | 'skipped'
+  retry_count       INTEGER NOT NULL DEFAULT 0,
   error_message     TEXT,
-  created_at        TEXT    NOT NULL,
-  resolved_at       TEXT
+  loaded_at         TEXT    NOT NULL,
+  fired_at          TEXT
 );
 
 CREATE INDEX idx_magazine_status ON download_magazine(status);
 ```
 
-### 状态机
+### Column Rationale
+
+| Column | Purpose |
+|--------|---------|
+| `model_version_id` | Primary identifier; UNIQUE prevents duplicate loads |
+| `model_id` | FK-like reference to the parent model |
+| `model_name` | Parsed display field — user sees this before firing |
+| `version_name` | Parsed display field — user confirms the right version |
+| `base_model` | e.g. "SD 1.5", "SDXL 1.0" — display only |
+| `model_type` | e.g. "Checkpoint", "LoRA" — used to build file paths |
+| `file_count` | Number of files in this version (model + media) — display |
+| `total_size_kb` | Sum of all file sizes — display |
+| `model_json` | Full `GET /api/v1/models/{id}` response as JSON string |
+| `version_json` | Full `GET /api/v1/model-versions/{id}` response as JSON string |
+| `status` | Current state in the magazine lifecycle |
+| `retry_count` | How many consecutive failures for this round (0–3) |
+| `error_message` | Last error that caused failure |
+| `fired_at` | Timestamp of most recent Fire attempt on this round |
+
+### State Machine
 
 ```txt
-                       +---------+
-          装弹 ───────→| pending |
-                       +----+----+
-                            | Fire 开始
-                       +----v-----+
-                       | resolving |
-                       +----+-----+
-                            |
-          ┌─────────┬───────┼──────────┬──────────┐
-          │         │       │          │          │
-     +----v---+ +---v----+ +v--------+ +v------+ |
-     |resolved| |failed  | |skipped_  | |skipped| |
-     +--------+ +--------+ |duplicate | |_exists| |
-                           +----------+ +-------+ |
-                                                  |
-                     Fire 全部完成后汇总           |
+                    Load (API fetch + validate + INSERT)
+                               │
+                          ┌────▼────┐
+                          │ pending  │◄─────────── unjam(retry): reset retry_count to 0
+                          └────┬────┘
+                               │ Fire picks this round
+                          ┌────▼────┐
+                          │ firing   │ ← AT MOST ONE row has this at any time
+                          └────┬────┘
+                               │
+                    ┌──────────┼──────────┐
+                    │          │          │
+                success    failure    failure
+                    │     (retry<3)  (retry=3)
+                    │          │          │
+                    │     ┌────▼────┐     │
+                    │     │ pending │     │  ← auto-retry: increment retry_count, reset to pending
+                    │     └─────────┘     │
+                    │                ┌────▼────┐
+                    │                │  failed  │ ← JAM — Fire loop stops entirely
+                    │                └────┬────┘
+                    │               unjam│ unjam
+                    │              (skip)│ (retry)
+                    │               ┌────▼───┐ │
+                    │               │skipped  │ │
+                    │               └─────────┘ │
+                    │                    └──────┘
+               ┌────▼────┐
+               │ DELETED  │ ← row removed from table
+               └──────────┘   auto-advance to next pending
 ```
 
-### 与 `download_task` 表的关系
+### Crash Recovery
 
-- Magazine 不直接关联 `download_task`
-- 解析成功时，调用现有的 `DownloadQueue.enqueueBatch()` 创建 `download_task` 行
-- 重复检测通过查询 `download_task` 表实现（不新增 FK）
+On app restart, `init()` checks the magazine table:
+
+1. Find any row with `status = 'firing'` (can only be one)
+2. Reset it: `status = 'pending'` (preserve `retry_count` so a round that had 2 failures doesn't get a fresh 3 attempts)
+3. Delete any `download_task` entries whose `model_version_id` matches that round (they are orphaned from the crashed session)
+4. Magazine is now in a consistent state — ready for Fire or manual intervention
+
+Without the `firing` status, recovery would require cross-referencing `download_task` batches with magazine rows — brittle and unnecessary.
 
 ---
 
-## 架构
-
-```txt
-lib/
-├── services/
-│   └── download/
-│       ├── download_task.dart                  — (已有) DownloadTask, DownloadQueueState
-│       ├── download_database.dart              — (已有) download_task 表 CRUD
-│       ├── download_queue.dart                 — (已有) 队列引擎
-│       ├── download_magazine_database.dart     — (新增) download_magazine 表 CRUD
-│       ├── download_magazine_item.dart         — (新增) MagazineItem 数据模型
-│       └── download_magazine_resolver.dart     — (新增) 串行解析引擎
-└── ui/
-    └── download/
-        ├── download_page.dart                  — (修改) 新增 TabBar
-        ├── download_fetch_tab.dart             — (重构) 现有 Fetch 逻辑提取为独立 tab
-        ├── download_magazine_tab.dart          — (新增) Magazine tab 完整 UI
-        └── widgets/
-            ├── download_batch_card.dart        — (已有)
-            ├── download_task_tile.dart         — (已有)
-            └── magazine_item_tile.dart         — (新增) 弹匣单行组件
-```
-
----
-
-## 数据模型
+## Data Model
 
 ### `MagazineItem`
 
 ```dart
-/// 弹匣中的一行 — 一个待解析的 model version ID。
 class MagazineItem {
-  final int id;                   // SQLite 自增主键
-  final int modelVersionId;       // CivitAI model version ID
-  MagazineItemStatus status;      // 当前状态
-  String? errorMessage;
-  final DateTime createdAt;
-  DateTime? resolvedAt;
+  final int id;                    // SQLite auto-increment PK
+  final int modelVersionId;        // CivitAI model version ID
+  final int modelId;               // Parent model ID
+  final String modelName;          // Display name from API
+  final String? versionName;       // Version name from API (nullable)
+  final String? baseModel;         // e.g. "SD 1.5", "SDXL 1.0"
+  final String? modelType;         // e.g. "Checkpoint", "LoRA"
+  final int fileCount;             // Total downloadable files
+  final double totalSizeKb;        // Sum of all file sizes
+  final String modelJson;          // Full API response JSON
+  final String versionJson;        // Full API response JSON
+  final MagazineItemStatus status;
+  final int retryCount;
+  final String? errorMessage;
+  final DateTime loadedAt;
+  final DateTime? firedAt;
 
-  // ... fromRow / toRow 工厂方法
+  const MagazineItem({ /* ... */ });
+
+  factory MagazineItem.fromRow(Map<String, Object?> row);
+  Map<String, Object?> toRow();
 }
 
 enum MagazineItemStatus {
-  pending,           // 等待解析
-  resolving,         // 正在解析
-  resolved,          // 解析成功，已入队
-  skippedDuplicate,  // 跳过 — 已在下载队列中
-  skippedExists,     // 跳过 — 文件已存在
-  failed,            // 解析失败（API 错误等）
+  pending,   // Waiting to be fired
+  firing,    // Currently being processed (only one at a time)
+  failed,    // JAMMED — failed after 3 retries
+  skipped,   // User chose to skip
 }
 ```
 
-### `MagazineState`（UI 绑定）
+### `LoadResult` — Returned by `load()`
 
 ```dart
-/// Magazine tab 的完整 UI 状态。
-class MagazineState {
-  final List<MagazineItem> items;
-  final bool isFiring;           // 正在扣扳机
-  final int resolvedCount;       // 成功数
-  final int failedCount;         // 失败数
-  final int skippedCount;        // 跳过数
+/// Result of loading a round into the magazine.
+sealed class LoadResult {
+  /// Successfully loaded and persisted.
+  const factory LoadResult.ok(MagazineItem item) = LoadOk;
 
-  int get pendingCount =>
-      items.where((i) => i.status == MagazineItemStatus.pending).length;
-  int get totalCount => items.length;
+  /// Validation or API error with structured details.
+  const factory LoadResult.error(LoadError error) = LoadError_;
+}
+
+class LoadError {
+  final LoadErrorType type;
+  final String message;    // Human-readable, safe for UI display
+  final String? detail;    // Technical detail for logging
+
+  const LoadError({required this.type, required this.message, this.detail});
+}
+
+enum LoadErrorType {
+  invalidId,            // Not a positive integer
+  networkError,         // Connection failed, timeout
+  apiError,             // API returned non-200 (404, 403, etc.)
+  validationError,      // API response missing required fields
+  alreadyInMagazine,    // Duplicate model_version_id
+}
+```
+
+### `FireEvent` — Streamed by `fire()`
+
+```dart
+/// Events emitted during the Fire process.
+sealed class FireEvent {
+  /// A round has started processing.
+  const factory FireEvent.roundStarted(MagazineItem item) = FireRoundStarted;
+
+  /// Retrying a failed round (attempt 2 or 3).
+  const factory FireEvent.retrying(MagazineItem item, int attempt, String reason) = FireRetrying;
+
+  /// A round downloaded successfully and was removed from the magazine.
+  const factory FireEvent.roundCompleted(int modelVersionId, String modelName) = FireRoundCompleted;
+
+  /// A round was skipped by user unjam action.
+  const factory FireEvent.roundSkipped(MagazineItem item) = FireRoundSkipped;
+
+  /// Fire is complete — all pending rounds processed or magazine is empty.
+  const factory FireEvent.done(FireSummary summary) = FireDone;
+
+  /// MAGAZINE JAMMED — a round failed 3 times. User must intervene.
+  const factory FireEvent.jammed(MagazineItem failedItem) = FireJammed;
+}
+
+class FireSummary {
+  final int completed;
+  final int skipped;
+  final int failed;
+
+  const FireSummary({
+    required this.completed,
+    required this.skipped,
+    required this.failed,
+  });
 }
 ```
 
 ---
 
-## 数据流
+## Public API
+
+Both `load()` and `fire()` are public, top-level or singleton methods designed for FFI access from Rust via `flutter_rust_bridge`.
+
+```dart
+/// Public API — add a model version to the magazine.
+///
+/// Fetches model + version data from CivitAI, validates the response,
+/// parses display fields, and persists to [DownloadMagazineDatabase].
+///
+/// Returns [LoadResult.ok] with the created [MagazineItem],
+/// or [LoadResult.error] with structured error details.
+///
+/// Callable from Rust via flutter_rust_bridge.
+Future<LoadResult> load({
+  required int modelVersionId,
+  required CivitaiApiClient api,
+}) async { /* ... */ }
+
+/// Public API — fire the magazine, processing rounds one at a time.
+///
+/// Each round is processed sequentially:
+///   1. Mark status = 'firing'
+///   2. Read model_json + version_json from the magazine row
+///   3. Build DownloadTask objects (model files, media files)
+///   4. Enqueue to DownloadQueue
+///   5. Wait for all tasks in the batch to complete
+///   6. On success: write API JSON files to disk, DELETE the magazine row
+///   7. Auto-advance to next pending round
+///
+/// On failure (any exception):
+///   - If retry_count < 2: increment, reset to 'pending', retry automatically
+///   - If retry_count >= 2 (3rd failure): mark 'failed', emit [FireEvent.jammed], STOP
+///
+/// Returns a [Stream] of [FireEvent] for real-time progress.
+///
+/// Callable from Rust via flutter_rust_bridge.
+Stream<FireEvent> fire({
+  required DownloadMagazineDatabase magazineDb,
+  required CivitaiApiClient api,
+}) async* { /* ... */ }
+```
+
+---
+
+## Load Flow
+
+```
+load(versionId)
+  │
+  ├─ Validate: versionId > 0 (integer)
+  │   └─ Fail → LoadError(type: invalidId)
+  │
+  ├─ Check duplicate: SELECT FROM download_magazine WHERE model_version_id = ?
+  │   └─ Exists → LoadError(type: alreadyInMagazine)
+  │
+  ├─ API call: GET /api/v1/model-versions/{versionId}
+  │   ├─ Network error → LoadError(type: networkError)
+  │   ├─ HTTP 4xx/5xx → LoadError(type: apiError)
+  │   └─ Success → parse ModelVersionEndpointData
+  │
+  ├─ Validate version response:
+  │   ├─ id != null
+  │   ├─ modelId != null
+  │   ├─ files[] is non-empty (at least one downloadable file)
+  │   └─ Fail → LoadError(type: validationError, detail: "missing required field: ...")
+  │
+  ├─ API call: GET /api/v1/models/{modelId}
+  │   ├─ Network error → LoadError(type: networkError)
+  │   ├─ HTTP 4xx/5xx → LoadError(type: apiError)
+  │   └─ Success → parse Model data
+  │
+  ├─ Validate model response:
+  │   ├─ id != null
+  │   ├─ name != null
+  │   └─ Fail → LoadError(type: validationError)
+  │
+  ├─ Parse display fields:
+  │   ├─ modelName = model.name
+  │   ├─ versionName = version.name
+  │   ├─ baseModel = version.baseModel
+  │   ├─ modelType = model.type
+  │   ├─ fileCount = count of model files + media images
+  │   └─ totalSizeKb = sum of file sizes
+  │
+  ├─ Serialize: model_json = jsonEncode(model), version_json = jsonEncode(version)
+  │
+  └─ INSERT INTO download_magazine
+      → LoadResult.ok(MagazineItem)
+```
+
+### Validation Details
+
+| Check | Error `type` | Example `message` |
+|-------|-------------|-------------------|
+| `versionId` ≤ 0 or non-integer | `invalidId` | "Model version ID must be a positive integer" |
+| Already in magazine | `alreadyInMagazine` | "Version 123456 is already in the magazine" |
+| No network connection | `networkError` | "Network error: Connection refused" |
+| HTTP 404 | `apiError` | "API error (404): Model version not found. Check the ID or your API key for NSFW content." |
+| HTTP 403 | `apiError` | "API error (403): Access denied. Check your API key." |
+| HTTP 5xx | `apiError` | "API error (500): CivitAI server error. Try again later." |
+| Version response missing `modelId` | `validationError` | "Invalid API response: missing required field 'modelId' in version data" |
+| Version has no files | `validationError` | "Version 123456 has no downloadable files" |
+| Model response missing `name` | `validationError` | "Invalid API response: missing required field 'name' in model data" |
+
+---
+
+## Fire Flow
+
+```
+fire()
+  │
+  ├─ Load all pending rounds: SELECT * WHERE status = 'pending' ORDER BY id
+  ├─ If none → emit FireEvent.done(summary: all zeros)
+  │
+  └─ For each pending round (sequential):
+       │
+       ├─ Emit FireEvent.roundStarted(item)
+       ├─ UPDATE status = 'firing', fired_at = now
+       │
+       ├─ Read model_json, version_json from magazine row
+       ├─ Parse into Model and ModelVersion objects
+       │
+       ├─ Resolve file download URLs (embed auth token)
+       │   └─ Any failure → count as retry
+       │
+       ├─ Build DownloadTask list:
+       │   ├─ modelTasks: one per "Model" type file
+       │   └─ mediaTasks: one per image
+       │   (Note: no apiJsonTasks here — JSON files written at the end)
+       │
+       ├─ Enqueue to DownloadQueue.instance.enqueueBatch()
+       │
+       ├─ Wait for batch completion (listen to DownloadQueue.stateStream)
+       │   │
+       │   ├─ All tasks completed → SUCCESS
+       │   │   ├─ Write {modelId}.api-info.json to disk
+       │   │   ├─ Write {versionId}.api-info.json to disk
+       │   │   ├─ Upsert to local DB (ModelRepository + ModelVersionRepository)
+       │   │   ├─ DELETE FROM download_magazine WHERE id = ?
+       │   │   ├─ Notify ModelRefreshBus
+       │   │   └─ Emit FireEvent.roundCompleted(versionId, modelName)
+       │   │
+       │   └─ Any task failed → count as FAILURE (one retry)
+       │
+       └─ On failure:
+            ├─ retry_count += 1
+            ├─ UPDATE download_magazine SET retry_count = ?, error_message = ?
+            │
+            ├─ If retry_count < 3:
+            │   ├─ UPDATE status = 'pending'
+            │   ├─ Emit FireEvent.retrying(item, retry_count + 1, errorMessage)
+            │   └─ GOTO top of loop for THIS SAME ROUND (retry)
+            │
+            └─ If retry_count >= 3:
+                ├─ UPDATE status = 'failed'
+                ├─ Emit FireEvent.jammed(item)
+                └─ STOP — do NOT continue to next round
+```
+
+### Fire Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant MT as MagazineTab
+    participant Caller as Caller (UI / Rust)
     participant MDB as MagazineDatabase
-    participant MR as MagazineResolver
-    participant API as CivitAI API
     participant DQ as DownloadQueue
+    participant API as CivitAI API
     participant Disk as File System
+    participant Bus as ModelRefreshBus
 
-    Note over U,Disk: === 装弹阶段 ===
-    U->>MT: 输入 version ID → 点击 "装弹"
-    MT->>MDB: INSERT (model_version_id, status='pending')
-    MDB-->>MT: 刷新列表
+    Caller->>MDB: SELECT pending rounds ORDER BY id
 
-    Note over U,Disk: === 扣扳机 ===
-    U->>MT: 点击 "Fire"
-    MT->>MDB: SELECT * WHERE status='pending' ORDER BY id
-    MDB-->>MT: pending items 列表
-    MT->>MR: resolve(items, api)
+    loop One round at a time
+        Caller->>MDB: UPDATE status = 'firing'
+        Caller->>Caller: Parse model_json + version_json
 
-    loop 串行处理每个 item
-        MR->>MR: 更新 status='resolving'
+        Caller->>API: resolveFileDownloadUrl() for each file
+        API-->>Caller: Resolved URLs
 
-        rect rgb(255, 240, 240)
-            Note over MR,API: 重复检测 ① — 文件已存在?
-            MR->>Disk: 检查 {basePath}/{type}/{modelId}/{versionId}/ 目录
-            Disk-->>MR: exists?
-            alt 文件已存在
-                MR->>MDB: status='skipped_exists'
-                Note over MR: continue 下一个
-            end
+        Caller->>DQ: enqueueBatch(modelTasks + mediaTasks)
+        DQ-->>Caller: Stream progress
+
+        alt All tasks completed
+            DQ-->>Caller: Batch done
+
+            Caller->>Disk: Write {modelId}.api-info.json
+            Caller->>Disk: Write {versionId}.api-info.json
+            Caller->>Bus: notify()
+
+            Caller->>MDB: DELETE WHERE id = ?
+            Caller-->>Caller: Emit roundCompleted → advance
+
+        else Any task failed (retry < 3)
+            Caller->>MDB: UPDATE retry_count += 1, status = 'pending'
+            Caller-->>Caller: Emit retrying → retry same round
+
+        else Third failure
+            Caller->>MDB: UPDATE status = 'failed'
+            Caller-->>Caller: Emit jammed → STOP
         end
-
-        rect rgb(255, 240, 240)
-            Note over MR,DQ: 重复检测 ② — 已在队列?
-            MR->>DQ: hasActiveBatch(versionId)?
-            DQ-->>MR: yes/no
-            alt 已在队列
-                MR->>MDB: status='skipped_duplicate'
-                Note over MR: continue 下一个
-            end
-        end
-
-        MR->>API: GET /api/v1/model-versions/{id}
-        API-->>MR: ModelVersionEndpointData
-
-        MR->>API: GET /api/v1/models/{modelId}
-        API-->>MR: Model data
-
-        MR->>Disk: 写入 {modelId}.api-info.json
-        MR->>Disk: 写入 {versionId}.api-info.json
-
-        MR->>DQ: enqueueBatch(tasks)
-        DQ-->>MR: 入队成功
-
-        MR->>MDB: status='resolved', resolved_at=now
     end
 
-    MR-->>MT: 解析完成，汇总: X 成功 / Y 失败 / Z 跳过
+    Caller-->>Caller: Emit done(summary)
 ```
 
 ---
 
-## Magazine Resolver 逻辑
+## Unjam Actions
 
-### 核心方法
+When the magazine is jammed (`status = 'failed'` on any round):
 
-```dart
-class DownloadMagazineResolver {
-  /// 串行解析弹匣中所有 pending item。
-  ///
-  /// 每个 item 独立处理：成功 → resolved，失败 → failed + skip。
-  /// 通过 [onItemUpdate] 回调实时推送每个 item 的状态变更。
-  Future<MagazineResult> resolve({
-    required CivitaiApi api,
-    required List<MagazineItem> items,
-    required void Function(MagazineItem item) onItemUpdate,
-  });
-}
+| Action | Method | Effect |
+|--------|--------|--------|
+| **Skip** | `skipFailedRound(id)` | UPDATE status = 'skipped'. User re-fires → continues from next pending. |
+| **Retry** | `retryFailedRound(id)` | UPDATE status = 'pending', retry_count = 0. User re-fires → retries this round. |
 
-/// 解析结果汇总。
-class MagazineResult {
-  final int resolved;
-  final int failed;
-  final int skippedDuplicate;
-  final int skippedExists;
-}
-```
-
-### 单个 item 解析步骤
+Both are simple database operations. The user then calls `fire()` again to resume.
 
 ```dart
-Future<void> _resolveOne(MagazineItem item) async {
-  // 1. 标记 resolving
-  item.status = MagazineItemStatus.resolving;
+/// Skip a jammed round — mark it as skipped so Fire can continue.
+Future<void> skipFailedRound(int magazineId);
 
-  // 2. 重复检测 ①：文件是否已存在
-  final basePath = await FileLayout.basePath;
-  final exists = await _checkFilesExist(basePath, item.modelVersionId);
-  if (exists) {
-    item.status = MagazineItemStatus.skippedExists;
-    return;
-  }
-
-  // 3. 重复检测 ②：是否已在下载队列
-  final inQueue = await _db.hasActiveBatch(item.modelVersionId);
-  if (inQueue) {
-    item.status = MagazineItemStatus.skippedDuplicate;
-    return;
-  }
-
-  // 4. API 调用：获取 version 详情
-  final versionResult = await api.modelVersions.getById(item.modelVersionId);
-  if (versionResult.isLeft) {
-    item.status = MagazineItemStatus.failed;
-    item.errorMessage = _formatError(versionResult.left);
-    return;
-  }
-  final version = versionResult.right;
-
-  // 5. API 调用：获取 model 信息
-  final modelResult = await api.models.getById(version.modelId);
-  if (modelResult.isLeft) {
-    item.status = MagazineItemStatus.failed;
-    item.errorMessage = _formatError(modelResult.left);
-    return;
-  }
-  final model = modelResult.right;
-
-  // 6. 写入 API JSON 到磁盘
-  await _writeApiJson(basePath, model, version);
-
-  // 7. 构建 DownloadTask 列表并入队
-  final tasks = _buildDownloadTasks(model, version);
-  await DownloadQueue.instance.enqueueBatch(
-    batchId: tasks.first.batchId,
-    apiJsonTasks: tasks.where((t) => t.fileType == DownloadFileType.apiJson).toList(),
-    modelTasks: tasks.where((t) => t.fileType == DownloadFileType.model).toList(),
-    mediaTasks: tasks.where((t) => t.fileType == DownloadFileType.media).toList(),
-  );
-
-  // 8. 标记 resolved
-  item.status = MagazineItemStatus.resolved;
-  item.resolvedAt = DateTime.now();
-}
-```
-
-### 重复检测逻辑
-
-```dart
-/// 检查 version 的文件是否已在磁盘上。
-Future<bool> _checkFilesExist(String basePath, int versionId) async {
-  // 需要先知道 modelId 和 modelType
-  // 方法 A: 查询本地 SQLite model_version 表
-  // 方法 B: 直接扫描文件系统（当前 download_queue 的做法）
-  // 采用方法 A — 更快，不需要知道目录结构
-  final versions = await _localDb.getModelVersionsById(versionId);
-  if (versions.isEmpty) return false;
-  // 有本地记录 = 曾经下载过，检查关键文件是否存在
-  final dir = Directory(p.join(basePath, versions.first.modelType,
-      '${versions.first.modelId}', '$versionId'));
-  return await dir.exists();
-}
+/// Retry a jammed round — reset to pending with fresh retry count.
+Future<void> retryFailedRound(int magazineId);
 ```
 
 ---
@@ -325,193 +502,192 @@ Future<bool> _checkFilesExist(String basePath, int versionId) async {
 class DownloadMagazineDatabase {
   const DownloadMagazineDatabase();
 
-  /// 装弹：添加一个 version ID 到弹匣。
-  /// 返回 null 表示成功，返回 String 表示失败原因。
-  Future<String?> add(int modelVersionId) async { /* ... */ }
+  /// Load: add a model version to the magazine.
+  /// Performs duplicate check. Does NOT fetch API data (caller handles that).
+  Future<void> insert(MagazineItem item);
 
-  /// 退弹：从弹匣中移除指定 item。
-  Future<void> remove(int id) async { /* ... */ }
+  /// Unload: remove a round from the magazine.
+  /// Only allowed for 'pending', 'skipped', or 'failed' statuses.
+  Future<void> remove(int id);
 
-  /// 清空弹匣：删除所有非 resolving 状态的 item。
-  Future<void> clear() async { /* ... */ }
+  /// Clear all non-firing rounds.
+  Future<void> clear();
 
-  /// 获取所有 item（按添加顺序）。
-  Future<List<MagazineItem>> loadAll() async { /* ... */ }
+  /// Get all rounds (ordered by insertion).
+  Future<List<MagazineItem>> loadAll();
 
-  /// 获取所有 pending item。
-  Future<List<MagazineItem>> loadPending() async { /* ... */ }
+  /// Get all pending rounds (ordered by insertion).
+  Future<List<MagazineItem>> loadPending();
 
-  /// 更新单个 item 的状态。
-  Future<void> update(MagazineItem item) async { /* ... */ }
+  /// Get the currently firing round (at most one).
+  Future<MagazineItem?> loadFiring();
+
+  /// Update a round's status, retry_count, error_message.
+  Future<void> update(MagazineItem item);
+
+  /// Find by model_version_id for duplicate check.
+  Future<MagazineItem?> findByModelVersionId(int modelVersionId);
+
+  /// Crash recovery: find any leftover 'firing' round.
+  Future<MagazineItem?> findFiringRound();
+
+  /// Crash recovery: reset 'firing' round back to 'pending'.
+  Future<void> resetFiringToPending(int id);
+
+  /// Delete a round (called on successful completion).
+  Future<void> delete(int id);
 }
 ```
 
-### 去重逻辑（装弹时）
+---
 
-```dart
-Future<String?> add(int modelVersionId) async {
-  // 检查弹匣内是否已存在
-  final existing = await _db.query(
-    'download_magazine',
-    where: 'model_version_id = ?',
-    whereArgs: [modelVersionId],
-  );
-  if (existing.isNotEmpty) {
-    return '已在弹匣中';
-  }
-  // 插入
-  await _db.insert('download_magazine', { /* ... */ });
-  return null; // 成功
-}
-```
+## Deduplication Strategy
+
+Three layers of dedup, checked at different stages:
+
+| Layer | When | Check | Action |
+|-------|------|-------|--------|
+| **1. Magazine internal** | Load | `model_version_id` UNIQUE in `download_magazine` | Reject with `alreadyInMagazine` |
+| **2. Active queue** | Fire | `DownloadQueue` has active batch for this `model_version_id` | Skip this round (shouldn't happen in normal flow, but guards against race conditions) |
+| **3. Disk** | Fire | `{basePath}/{modelType}/{modelId}/{versionId}/` directory exists with JSON files | Skip this round — already downloaded |
 
 ---
 
-## UI 设计
+## UI Design
 
-### Download 页面布局
+### Download Page Layout
 
 ```txt
-┌─────────────────────────────────┐
-│  Download                   [⚙] │
-├─────────────────────────────────┤
-│  [ Fetch ]  [ Magazine ]        │  ← TabBar
-├─────────────────────────────────┤
-│                                 │
-│  (TabBarView 内容区域)           │
-│                                 │
-├─────────────────────────────────┤
-│  === 下载队列 (两个 Tab 共享) === │  ← 底部队列区域始终可见
-│  ┌───────────────────────────┐  │
-│  │ Batch Card 1              │  │
-│  │ Batch Card 2              │  │
-│  └───────────────────────────┘  │
-└─────────────────────────────────┘
+┌─────────────────────────────────────┐
+│  Download                       [⚙] │
+├─────────────────────────────────────┤
+│  [ Fetch ]  [ Magazine ]            │  ← TabBar
+├─────────────────────────────────────┤
+│                                     │
+│  (TabBarView content area)          │
+│                                     │
+├─────────────────────────────────────┤
+│  === Download Queue (shared) ===    │  ← Always visible, both tabs
+│  ┌───────────────────────────────┐  │
+│  │ Batch Card 1                  │  │
+│  │ Batch Card 2                  │  │
+│  └───────────────────────────────┘  │
+└─────────────────────────────────────┘
 ```
 
-### Magazine Tab 布局
+### Magazine Tab Layout
 
 ```txt
-┌─────────────────────────────────┐
-│  ┌──────────────────────┐ [装弹] │  ← 输入框 + 按钮
-│  │ version ID (数字)     │       │
-│  └──────────────────────┘       │
-├─────────────────────────────────┤
-│  弹匣 (3)           [清空] [Fire]│  ← 头部：计数 + 操作按钮
-├─────────────────────────────────┤
-│  ┌─────────────────────────────┐│
-│  │ ✅ 123456  v1.0 ModelName   ││  ← resolved (绿色)
-│  └─────────────────────────────┘│
-│  ┌─────────────────────────────┐│
-│  │ ⏳ 789012  (解析中…)        ││  ← resolving (蓝色 + spinner)
-│  └─────────────────────────────┘│
-│  ┌─────────────────────────────┐│
-│  │ ⬜ 345678                    ││  ← pending (灰色)
-│  │            [✕]              ││  ← 退弹按钮
-│  └─────────────────────────────┘│
-│  ┌─────────────────────────────┐│
-│  │ ❌ 901234  Not found        ││  ← failed (红色 + 错误信息)
-│  └─────────────────────────────┘│
-│  ┌─────────────────────────────┐│
-│  │ ⏭️ 567890  文件已存在       ││  ← skipped (黄色)
-│  └─────────────────────────────┘│
-│  ┌─────────────────────────────┐│
-│  │ ⏭️ 111111  已在下载队列     ││  ← skipped (黄色)
-│  └─────────────────────────────┘│
-├─────────────────────────────────┤
-│  解析中 2/6                      │  ← 底部进度条（Fire 时显示）
-│  ████████░░░░░░░░               │
-└─────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  ┌────────────────────────────┐  [Load]  │  ← Input + button
+│  │ model version ID (integer)  │          │
+│  └────────────────────────────┘          │
+├─────────────────────────────────────────┤
+│  Magazine (3)         [Unload All] [Fire]│  ← Header: count + actions
+├─────────────────────────────────────────┤
+│  ┌─────────────────────────────────────┐│
+│  │ ⬜ SDXL Model Name — v2.0            ││  ← pending (grey)
+│  │   Checkpoint · 2 files · 6.8 GB     ││
+│  │                            [✕]      ││  ← unload button
+│  └─────────────────────────────────────┘│
+│  ┌─────────────────────────────────────┐│
+│  │ ⬜ LoRA Name — v1.0                  ││  ← pending
+│  │   LoRA · 1 file · 144 MB            ││
+│  │                            [✕]      ││
+│  └─────────────────────────────────────┘│
+│  ┌─────────────────────────────────────┐│
+│  │ ❌ Bad Model — v3.0                  ││  ← failed (red)
+│  │   Error: API 503 — server overload   ││
+│  │              [Skip] [Retry]          ││  ← unjam actions
+│  └─────────────────────────────────────┘│
+│  ┌─────────────────────────────────────┐│
+│  │ ⏭️ Skipped Model — v1.0              ││  ← skipped (yellow)
+│  │   User skipped                      ││
+│  └─────────────────────────────────────┘│
+├─────────────────────────────────────────┤
+│  Fire: ✅ 2 done · ❌ 1 jammed           │  ← Status bar (during/after Fire)
+└─────────────────────────────────────────┘
 ```
 
-### 状态图标映射
+### Status Display
 
-| Status | 图标 | 颜色 |
-|--------|------|------|
-| `pending` | `⬜` `Icons.radio_button_unchecked` | `secondary` |
-| `resolving` | `⏳` `Icons.hourglass_top` + spinner | `primary` |
-| `resolved` | `✅` `Icons.check_circle` | `accent` |
-| `failed` | `❌` `Icons.error` | `error` |
-| `skipped_duplicate` | `⏭️` `Icons.skip_next` | `warning` |
-| `skipped_exists` | `⏭️` `Icons.skip_next` | `warning` |
+| Status | Icon | Color | Subtitle |
+|--------|------|-------|----------|
+| `pending` | `Icons.radio_button_unchecked` | `secondary` | model type · file count · total size |
+| `firing` | `Icons.hourglass_top` + spinner | `primary` | "Downloading files…" |
+| `failed` | `Icons.error` | `error` | error message + [Skip] [Retry] buttons |
+| `skipped` | `Icons.skip_next` | `warning` | "Skipped" |
 
-### Magazine Item 信息展示
+There is no "completed" row — successful rounds are deleted immediately.
 
-| 状态 | 显示内容 |
-|------|---------|
-| `pending` | version ID |
-| `resolving` | version ID + spinner |
-| `resolved` | version ID + model name + version name |
-| `failed` | version ID + 错误信息 |
-| `skipped_*` | version ID + 跳过原因 |
+### Button Behavior
 
----
-
-## 按键行为
-
-### 装弹 (Load)
-
-1. 校验输入是否为有效正整数
-2. 查询 `download_magazine` 表是否已存在该 ID
-3. 不存在 → INSERT，清空输入框，列表刷新
-4. 已存在 → 显示 snackbar "已在弹匣中"，不清空输入框
-
-### 扣扳机 (Fire)
-
-1. 加载所有 `pending` item
-2. 将按钮切换为 "停止" / 禁用态
-3. 启动 `MagazineResolver.resolve()`
-4. 每个 item 状态变更时，通过 `onItemUpdate` 回调实时刷新 UI
-5. 全部完成后，按钮恢复，显示 SnackBar 汇总：
-   > "解析完成 — 12 成功, 2 失败, 1 跳过"
-6. 自动清除 resolved 和 skipped 的 item？→ **不自动清除**，用户可以手动清空
-
-### 停止 (Stop) — Fire 过程中
-
-1. 设置取消标志
-2. 当前正在解析的 item 完成后不再继续下一个
-3. 剩余的 pending item 保持 pending 状态
-
-### 退弹 (Unload)
-
-1. 从 `download_magazine` 表中 DELETE
-2. 只能退 `pending` / `failed` / `skipped_*` 状态的 item
-3. `resolved` 状态的 item 退弹无意义（已入队），但允许删除记录
-
-### 清空 (Clear)
-
-1. 二次确认对话框
-2. DELETE 所有非 `resolving` 状态的 item
-3. `resolving` 状态的 item 保留（正在 Fire 中）
+| Button | State | Action |
+|--------|-------|--------|
+| **Load** | Input empty or invalid | Disabled |
+| **Load** | Valid ID entered | Validate → API fetch → INSERT → clear input |
+| **Fire** | Magazine empty or isFiring | Disabled |
+| **Fire** | Pending rounds exist, not firing | Begin sequential Fire loop |
+| **Fire** | Jammed (has failed round) | Disabled — user must unjam first |
+| **Unload All** | Any non-firing rounds exist | Confirmation dialog → DELETE non-firing rows |
+| **[✕] (unload)** | Round is pending/skipped/failed | DELETE single row |
 
 ---
 
-## 边界情况
+## Edge Cases
 
-| 情况 | 处理 |
-|------|------|
-| 输入非数字 | 按钮 disabled / 显示 "请输入数字 ID" |
-| 输入已存在的 ID（弹匣内） | snackbar "已在弹匣中" |
-| 弹匣为空时点 Fire | 按钮 disabled |
-| Fire 中再次点 Fire | 忽略（按钮已 disabled） |
-| Fire 中切换到 Fetch tab | 允许 — 解析继续在后台运行，回来后状态仍更新 |
-| Fire 中退出 Download 页面 | 解析继续（Resolver 不绑定 widget lifecycle） |
-| App 在 Fire 中被 kill | 重启后，`resolving` 状态的 item 重置为 `pending`，`pending` 保持不变。下次 Fire 继续解析 |
-| API 返回 `modelId` 但 model 不存在 | 写入 version JSON，model JSON 标记 failed，继续下一个 |
-| version 没有 model file（只有 metadata） | 只创建 apiJson + media 任务 |
-| 同一个 version 入队两次（竞态） | `DownloadQueue` 已有的 duplicate enqueue 逻辑处理 |
+| Case | Handling |
+|------|----------|
+| Input non-integer | Button disabled; hint text "Enter a numeric version ID" |
+| Input already in magazine | SnackBar "Version 123456 is already in the magazine" |
+| Magazine empty, press Fire | Button disabled |
+| Fire in progress, press Fire again | Ignored (button disabled / isFiring guard) |
+| Fire in progress, switch to Fetch tab | Allowed — Fire is independent of widget lifecycle |
+| Fire in progress, leave Download page | Fire continues (not bound to widget tree) |
+| App killed during Fire | On restart: `firing` row reset to `pending`, orphaned `download_task` entries deleted |
+| App killed during Fire, download partially complete | Resumed tasks will re-download (idempotent — existing files overwritten or skipped based on DownloadQueue behavior) |
+| API returns version but model endpoint fails | Load fails with `apiError` or `validationError` |
+| Version has images but no model file | Still loadable; Fire creates only media tasks |
+| Duplicate Fire (race condition) | `isFiring` flag in magazine database prevents concurrent Fire calls |
+| All rounds completed | Magazine table is empty; Fire emits `done(0,0,0)` |
+| Multiple jammed rounds (impossible in normal flow) | Only the first `failed` round blocks Fire; user must clear it before others matter |
 
 ---
 
-## 实现步骤
+## File Structure
 
-| 步骤 | 文件 | 描述 |
-|------|------|------|
-| 1 | `download_magazine_item.dart` | `MagazineItem` 数据模型 + `MagazineItemStatus` 枚举 |
-| 2 | `download_magazine_database.dart` | `download_magazine` 表 CRUD + 建表 migration |
-| 3 | `download_magazine_resolver.dart` | 串行解析引擎，Skip & Continue |
-| 4 | `magazine_item_tile.dart` | 弹匣单行 UI 组件（状态图标 + 信息 + 退弹按钮） |
-| 5 | `download_fetch_tab.dart` | 提取现有 Fetch 逻辑为独立 tab（纯重构，不改行为） |
-| 6 | `download_magazine_tab.dart` | Magazine tab 完整 UI |
-| 7 | `download_page.dart` | 添加 TabBar + TabBarView，整合两个 tab + 底部队列 |
-| 8 | `database.dart` | Migration 添加 `download_magazine` 表 |
+```txt
+lib/
+├── services/
+│   └── download/
+│       ├── download_task.dart                  — (existing) DownloadTask, DownloadQueueState
+│       ├── download_database.dart              — (existing) download_task table CRUD
+│       ├── download_queue.dart                 — (existing) queue engine (unchanged)
+│       ├── download_magazine_item.dart         — (new) MagazineItem model + MagazineItemStatus enum
+│       ├── download_magazine_database.dart     — (new) download_magazine table CRUD + migration
+│       └── download_magazine_resolver.dart     — (new) Load + Fire engine (public API)
+└── ui/
+    └── download/
+        ├── download_page.dart                  — (modify) add TabBar, integrate Magazine tab
+        ├── download_fetch_tab.dart             — (refactor) extract existing Fetch logic
+        ├── download_magazine_tab.dart          — (new) Magazine tab UI
+        └── widgets/
+            ├── download_batch_card.dart        — (existing)
+            ├── download_task_tile.dart         — (existing)
+            └── magazine_item_tile.dart         — (new) single round row component
+```
+
+---
+
+## Implementation Steps
+
+| Step | File | Description |
+|------|------|-------------|
+| 1 | `download_magazine_item.dart` | `MagazineItem` model, `MagazineItemStatus` enum, `LoadResult`, `LoadError`, `FireEvent`, `FireSummary` |
+| 2 | `download_magazine_database.dart` | `download_magazine` table migration + CRUD |
+| 3 | `download_magazine_resolver.dart` | `load()` + `fire()` public API with validation, retry, and jam logic |
+| 4 | `download_fetch_tab.dart` | Extract existing Fetch logic into standalone widget (refactor only) |
+| 5 | `magazine_item_tile.dart` | Single round row: status icon, parsed info, unload/unjam buttons |
+| 6 | `download_magazine_tab.dart` | Magazine tab: input + Load button, round list, Fire button, status bar |
+| 7 | `download_page.dart` | Add TabBar, integrate both tabs, shared queue section |
+| 8 | `database.dart` | Add `download_magazine` to migration |

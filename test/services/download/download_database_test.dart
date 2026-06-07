@@ -19,7 +19,7 @@ void main() {
     await CivitaiDatabase.instance.then((d) => d.close());
   });
 
-  DownloadTask _makeTask({
+  DownloadTask makeTask({
     String id = 'task-1',
     String batchId = 'batch-1',
     String status = 'pending',
@@ -50,7 +50,7 @@ void main() {
   // =========================================================================
   group('DownloadDatabase', () {
     test('insert and load single task', () async {
-      final task = _makeTask();
+      final task = makeTask();
       await db.insert(task);
 
       final all = await db.loadAll();
@@ -61,9 +61,9 @@ void main() {
 
     test('insertAll multiple tasks', () async {
       final tasks = [
-        _makeTask(id: 't1', batchId: 'b1'),
-        _makeTask(id: 't2', batchId: 'b1'),
-        _makeTask(id: 't3', batchId: 'b2'),
+        makeTask(id: 't1', batchId: 'b1'),
+        makeTask(id: 't2', batchId: 'b1'),
+        makeTask(id: 't3', batchId: 'b2'),
       ];
       await db.insertAll(tasks);
 
@@ -72,7 +72,7 @@ void main() {
     });
 
     test('update changes status and progress', () async {
-      final task = _makeTask();
+      final task = makeTask();
       await db.insert(task);
 
       task.status = DownloadTaskStatus.downloading;
@@ -86,11 +86,11 @@ void main() {
 
     test('loadActive returns only non-terminal tasks', () async {
       await db.insertAll([
-        _makeTask(id: 't1', status: 'pending'),
-        _makeTask(id: 't2', status: 'downloading'),
-        _makeTask(id: 't3', status: 'completed'),
-        _makeTask(id: 't4', status: 'failed'),
-        _makeTask(id: 't5', status: 'cancelled'),
+        makeTask(id: 't1', status: 'pending'),
+        makeTask(id: 't2', status: 'downloading'),
+        makeTask(id: 't3', status: 'completed'),
+        makeTask(id: 't4', status: 'failed'),
+        makeTask(id: 't5', status: 'cancelled'),
       ]);
 
       final active = await db.loadActive();
@@ -104,9 +104,9 @@ void main() {
 
     test('loadByBatch filters by batchId', () async {
       await db.insertAll([
-        _makeTask(id: 't1', batchId: 'b1'),
-        _makeTask(id: 't2', batchId: 'b1'),
-        _makeTask(id: 't3', batchId: 'b2'),
+        makeTask(id: 't1', batchId: 'b1'),
+        makeTask(id: 't2', batchId: 'b1'),
+        makeTask(id: 't3', batchId: 'b2'),
       ]);
 
       final b1 = await db.loadByBatch('b1');
@@ -115,19 +115,19 @@ void main() {
     });
 
     test('hasActiveBatch detects active tasks', () async {
-      await db.insert(_makeTask(modelVersionId: 99, status: 'pending'));
+      await db.insert(makeTask(modelVersionId: 99, status: 'pending'));
       expect(await db.hasActiveBatch(99), isTrue);
 
       await db.insert(
-        _makeTask(id: 't2', modelVersionId: 100, status: 'completed'),
+        makeTask(id: 't2', modelVersionId: 100, status: 'completed'),
       );
       expect(await db.hasActiveBatch(100), isFalse);
     });
 
     test('deleteBatch removes specific batch', () async {
       await db.insertAll([
-        _makeTask(id: 't1', batchId: 'b1'),
-        _makeTask(id: 't2', batchId: 'b2'),
+        makeTask(id: 't1', batchId: 'b1'),
+        makeTask(id: 't2', batchId: 'b2'),
       ]);
 
       await db.deleteBatch('b1');
@@ -139,9 +139,9 @@ void main() {
 
     test('deleteCompleted clears history', () async {
       await db.insertAll([
-        _makeTask(id: 't1', status: 'completed'),
-        _makeTask(id: 't2', status: 'cancelled'),
-        _makeTask(id: 't3', status: 'pending'),
+        makeTask(id: 't1', status: 'completed'),
+        makeTask(id: 't2', status: 'cancelled'),
+        makeTask(id: 't3', status: 'pending'),
       ]);
 
       await db.deleteCompleted();

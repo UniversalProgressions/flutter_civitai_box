@@ -5,6 +5,10 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'settings/nsfw_settings.dart';
 import 'settings/settings.dart';
 import 'services/download/download_queue.dart';
+import 'services/download/download_magazine_database.dart';
+import 'services/download/download_database.dart';
+import 'services/download/download_task.dart';
+import 'services/logger.dart';
 import 'ui/download/download_page.dart';
 import 'ui/local_models/local_models_page.dart';
 import 'ui/settings/settings_page.dart';
@@ -17,8 +21,43 @@ void main() async {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
   await DownloadQueue.instance.init();
+  await _recoverMagazineFromCrash();
   await NsfwSettings.getInstance(); // init & restore persisted mode
   runApp(const MyApp());
+}
+
+/// Recover the magazine from a crash by resetting any 'firing' round
+/// and cleaning up orphaned download tasks.
+Future<void> _recoverMagazineFromCrash() async {
+  const magazineDb = DownloadMagazineDatabase();
+  final firing = await magazineDb.findFiringRound();
+  if (firing == null) return;
+
+  logger.info(
+    'Magazine crash recovery: resetting round ${firing.modelVersionId} '
+    '(retry_count=${firing.retryCount})',
+  );
+
+  await magazineDb.resetFiringToPending(firing.id);
+
+  // Delete orphaned download_task entries from the crashed session
+  const downloadDb = DownloadDatabase();
+  final tasks = await downloadDb.loadActive();
+  final orphaned = tasks
+      .where((t) => t.modelVersionId == firing.modelVersionId)
+      .where(
+        (t) =>
+            t.status == DownloadTaskStatus.pending ||
+            t.status == DownloadTaskStatus.downloading,
+      );
+
+  for (final task in orphaned) {
+    task.status = DownloadTaskStatus.cancelled;
+    task.updatedAt = DateTime.now().toIso8601String();
+    await downloadDb.update(task);
+  }
+
+  logger.info('Magazine crash recovery complete');
 }
 
 class MyApp extends StatefulWidget {

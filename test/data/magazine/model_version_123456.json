@@ -1,0 +1,48 @@
+{
+  "id": 123456,
+  "modelId": 789,
+  "name": "v2.0",
+  "baseModel": "SD 1.5",
+  "baseModelType": "Standard",
+  "publishedAt": "2025-01-01T00:00:00.000Z",
+  "nsfwLevel": 1,
+  "description": "A test model version.",
+  "stats": {
+    "downloadCount": 15000,
+    "thumbsUpCount": 1800
+  },
+  "files": [
+    {
+      "id": 1001,
+      "sizeKB": 7168000.0,
+      "name": "test_model.safetensors",
+      "type": "Model",
+      "downloadUrl": "https://civitai.com/api/download/models/1001"
+    },
+    {
+      "id": 1002,
+      "sizeKB": 3584000.0,
+      "name": "test_model_fp16.safetensors",
+      "type": "Model",
+      "downloadUrl": "https://civitai.com/api/download/models/1002"
+    }
+  ],
+  "images": [
+    {
+      "url": "https://image.civitai.com/x/1.jpg",
+      "nsfwLevel": 1,
+      "width": 1024,
+      "height": 768,
+      "hash": "abc123",
+      "type": "image"
+    },
+    {
+      "url": "https://image.civitai.com/x/2.jpg",
+      "nsfwLevel": 1,
+      "width": 768,
+      "height": 512,
+      "hash": "def456",
+      "type": "image"
+    }
+  ]
+}

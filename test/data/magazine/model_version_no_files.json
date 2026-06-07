@@ -1,0 +1,15 @@
+{
+  "id": 555,
+  "modelId": 999,
+  "name": "Empty Version",
+  "baseModel": "SDXL 1.0",
+  "baseModelType": "Standard",
+  "publishedAt": "2025-01-01T00:00:00.000Z",
+  "nsfwLevel": 1,
+  "stats": {
+    "downloadCount": 0,
+    "thumbsUpCount": 0
+  },
+  "files": [],
+  "images": []
+}

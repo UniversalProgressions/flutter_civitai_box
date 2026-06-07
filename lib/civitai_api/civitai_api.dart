@@ -94,4 +94,7 @@ class CivitaiApiClient {
            },
          ),
        );
+
+  /// Create a client with a pre-configured [Dio] instance (for testing).
+  CivitaiApiClient.withDio(Dio dio) : _dio = dio;
 }

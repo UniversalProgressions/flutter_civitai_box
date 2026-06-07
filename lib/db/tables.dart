@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS model_version_image (
   nsfw_level           INTEGER NOT NULL,
   width                INTEGER NOT NULL,
   height               INTEGER NOT NULL,
-  hash                 TEXT    NOT NULL,
+  hash                 TEXT,
   type                 TEXT    NOT NULL,
   model_version_id     INTEGER NOT NULL,
   FOREIGN KEY (model_version_id) REFERENCES model_version(id) ON DELETE CASCADE
@@ -233,6 +233,28 @@ CREATE INDEX IF NOT EXISTS idx_download_task_batch ON download_task(batch_id);
 CREATE INDEX IF NOT EXISTS idx_download_task_status ON download_task(status);
 ''';
 
+const String createDownloadMagazineTable = '''
+CREATE TABLE IF NOT EXISTS download_magazine (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  model_version_id  INTEGER NOT NULL UNIQUE,
+  model_id          INTEGER NOT NULL,
+  model_name        TEXT    NOT NULL,
+  version_name      TEXT,
+  base_model        TEXT,
+  model_type        TEXT,
+  file_count        INTEGER NOT NULL DEFAULT 0,
+  total_size_kb     REAL    NOT NULL DEFAULT 0,
+  model_json        TEXT    NOT NULL,
+  version_json      TEXT    NOT NULL,
+  status            TEXT    NOT NULL DEFAULT 'pending',
+  retry_count       INTEGER NOT NULL DEFAULT 0,
+  error_message     TEXT,
+  loaded_at         TEXT    NOT NULL,
+  fired_at          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_magazine_status ON download_magazine(status);
+''';
+
 /// Ordered list of all CREATE statements for the migration runner.
 const List<String> allCreateStatements = [
   createCreatorTable,
@@ -249,4 +271,5 @@ const List<String> allCreateStatements = [
   createUserCustomTagTable,
   createSavedSearchTable,
   createDownloadTaskTable,
+  createDownloadMagazineTable,
 ];

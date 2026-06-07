@@ -44,8 +44,9 @@ class CivitaiDatabase {
 
     _database = await openDatabase(
       path,
-      version: 1,
+      version: 3,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
     );
   }
@@ -59,6 +60,36 @@ class CivitaiDatabase {
   Future<void> _onCreate(Database db, int version) async {
     for (final stmt in allCreateStatements) {
       await db.execute(stmt);
+    }
+  }
+
+  /// Handle database version upgrades.
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute(createDownloadMagazineTable);
+    }
+    if (oldVersion < 3) {
+      // Recreate model_version_image with nullable hash column.
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS model_version_image_v3 (
+          id                   INTEGER NOT NULL PRIMARY KEY,
+          url                  TEXT    NOT NULL,
+          nsfw_level           INTEGER NOT NULL,
+          width                INTEGER NOT NULL,
+          height               INTEGER NOT NULL,
+          hash                 TEXT,
+          type                 TEXT    NOT NULL,
+          model_version_id     INTEGER NOT NULL,
+          FOREIGN KEY (model_version_id) REFERENCES model_version(id) ON DELETE CASCADE
+        )
+      ''');
+      await db.execute(
+        'INSERT INTO model_version_image_v3 SELECT * FROM model_version_image',
+      );
+      await db.execute('DROP TABLE model_version_image');
+      await db.execute(
+        'ALTER TABLE model_version_image_v3 RENAME TO model_version_image',
+      );
     }
   }
 
@@ -80,8 +111,9 @@ class CivitaiDatabase {
     _instance = CivitaiDatabase._();
     _database = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _instance!._onCreate,
+      onUpgrade: _instance!._onUpgrade,
       onConfigure: _instance!._onConfigure,
     );
     return _instance!;

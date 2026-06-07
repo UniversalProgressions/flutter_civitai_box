@@ -134,7 +134,7 @@ class _JellyCompleteIcon extends StatelessWidget {
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 400),
       curve: jellyCurve,
-      builder: (_, scale, __) {
+      builder: (_, scale, _) {
         return Transform.scale(
           scale: scale,
           child: Icon(

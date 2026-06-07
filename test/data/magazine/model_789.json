@@ -1,0 +1,14 @@
+{
+  "id": 789,
+  "name": "Test Model Name",
+  "type": "Checkpoint",
+  "nsfw": false,
+  "nsfwLevel": 0,
+  "creator": {
+    "username": "test_creator",
+    "link": "https://civitai.com/user/test_creator",
+    "image": null
+  },
+  "tags": ["anime", "character"],
+  "modelVersions": []
+}
