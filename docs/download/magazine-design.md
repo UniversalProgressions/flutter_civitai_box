@@ -8,7 +8,7 @@
 ## Design Philosophy
 
 | Principle | Decision |
-|-----------|----------|
+| ----------- | ---------- |
 | **Input** | Single model version ID → Load fetches API data immediately |
 | **Review** | Parsed model name, version name, base model, file count, total size — user can remove before firing |
 | **Persistence** | `download_magazine` table — survives app restart |
@@ -18,7 +18,7 @@
 | **Completion** | Successful rounds are **deleted** from the table |
 | **JSON files** | Written to disk **after** all downloads finish, as the final step |
 | **Relationship to `download_task`** | Magazine is the staging layer; `download_task` is the execution layer — they coexist |
-| **Public API** | Both `load()` and `fire()` exposed for external callers (e.g. Rust via `flutter_rust_bridge`) |
+| **Public API** | Both `load()` and `fire()` exposed as public top-level functions |
 | **UI** | Download page gains a Magazine tab; existing Fetch tab is retained as "advanced" option |
 
 ---
@@ -26,7 +26,7 @@
 ## Metaphor Mapping
 
 | Metaphor | Implementation |
-|----------|----------------|
+| ---------- | ---------------- |
 | **Magazine** | `download_magazine` table — holds all pending/failed/skipped rounds |
 | **Load (装弹)** | Call `load(versionId)` → fetch model + version JSON from CivitAI API → store parsed fields + raw JSON in SQLite |
 | **Round (子弹)** | One row in the magazine — a model version with its full API data |
@@ -98,7 +98,7 @@ CREATE INDEX idx_magazine_status ON download_magazine(status);
 ### Column Rationale
 
 | Column | Purpose |
-|--------|---------|
+| -------- | --------- |
 | `model_version_id` | Primary identifier; UNIQUE prevents duplicate loads |
 | `model_id` | FK-like reference to the parent model |
 | `model_name` | Parsed display field — user sees this before firing |
@@ -269,7 +269,7 @@ class FireSummary {
 
 ## Public API
 
-Both `load()` and `fire()` are public, top-level or singleton methods designed for FFI access from Rust via `flutter_rust_bridge`.
+Both `load()` and `fire()` are public, top-level functions callable from anywhere in the app (UI or future API layer).
 
 ```dart
 /// Public API — add a model version to the magazine.
@@ -279,8 +279,6 @@ Both `load()` and `fire()` are public, top-level or singleton methods designed f
 ///
 /// Returns [LoadResult.ok] with the created [MagazineItem],
 /// or [LoadResult.error] with structured error details.
-///
-/// Callable from Rust via flutter_rust_bridge.
 Future<LoadResult> load({
   required int modelVersionId,
   required CivitaiApiClient api,
@@ -302,8 +300,6 @@ Future<LoadResult> load({
 ///   - If retry_count >= 2 (3rd failure): mark 'failed', emit [FireEvent.jammed], STOP
 ///
 /// Returns a [Stream] of [FireEvent] for real-time progress.
-///
-/// Callable from Rust via flutter_rust_bridge.
 Stream<FireEvent> fire({
   required DownloadMagazineDatabase magazineDb,
   required CivitaiApiClient api,
@@ -361,7 +357,7 @@ load(versionId)
 ### Validation Details
 
 | Check | Error `type` | Example `message` |
-|-------|-------------|-------------------|
+| ------- | ------------- | ------------------- |
 | `versionId` ≤ 0 or non-integer | `invalidId` | "Model version ID must be a positive integer" |
 | Already in magazine | `alreadyInMagazine` | "Version 123456 is already in the magazine" |
 | No network connection | `networkError` | "Network error: Connection refused" |
@@ -431,7 +427,7 @@ fire()
 
 ```mermaid
 sequenceDiagram
-    participant Caller as Caller (UI / Rust)
+    participant Caller as Caller (UI / API)
     participant MDB as MagazineDatabase
     participant DQ as DownloadQueue
     participant API as CivitAI API
@@ -546,7 +542,7 @@ class DownloadMagazineDatabase {
 Three layers of dedup, checked at different stages:
 
 | Layer | When | Check | Action |
-|-------|------|-------|--------|
+| ------- | ------ | ------- | -------- |
 | **1. Magazine internal** | Load | `model_version_id` UNIQUE in `download_magazine` | Reject with `alreadyInMagazine` |
 | **2. Active queue** | Fire | `DownloadQueue` has active batch for this `model_version_id` | Skip this round (shouldn't happen in normal flow, but guards against race conditions) |
 | **3. Disk** | Fire | `{basePath}/{modelType}/{modelId}/{versionId}/` directory exists with JSON files | Skip this round — already downloaded |
@@ -612,7 +608,7 @@ Three layers of dedup, checked at different stages:
 ### Status Display
 
 | Status | Icon | Color | Subtitle |
-|--------|------|-------|----------|
+| -------- | ------ | ------- | ---------- |
 | `pending` | `Icons.radio_button_unchecked` | `secondary` | model type · file count · total size |
 | `firing` | `Icons.hourglass_top` + spinner | `primary` | "Downloading files…" |
 | `failed` | `Icons.error` | `error` | error message + [Skip] [Retry] buttons |
@@ -623,7 +619,7 @@ There is no "completed" row — successful rounds are deleted immediately.
 ### Button Behavior
 
 | Button | State | Action |
-|--------|-------|--------|
+| -------- | ------- | -------- |
 | **Load** | Input empty or invalid | Disabled |
 | **Load** | Valid ID entered | Validate → API fetch → INSERT → clear input |
 | **Fire** | Magazine empty or isFiring | Disabled |
@@ -637,7 +633,7 @@ There is no "completed" row — successful rounds are deleted immediately.
 ## Edge Cases
 
 | Case | Handling |
-|------|----------|
+| ------ | ---------- |
 | Input non-integer | Button disabled; hint text "Enter a numeric version ID" |
 | Input already in magazine | SnackBar "Version 123456 is already in the magazine" |
 | Magazine empty, press Fire | Button disabled |
@@ -682,7 +678,7 @@ lib/
 ## Implementation Steps
 
 | Step | File | Description |
-|------|------|-------------|
+| ------ | ------ | ------------- |
 | 1 | `download_magazine_item.dart` | `MagazineItem` model, `MagazineItemStatus` enum, `LoadResult`, `LoadError`, `FireEvent`, `FireSummary` |
 | 2 | `download_magazine_database.dart` | `download_magazine` table migration + CRUD |
 | 3 | `download_magazine_resolver.dart` | `load()` + `fire()` public API with validation, retry, and jam logic |

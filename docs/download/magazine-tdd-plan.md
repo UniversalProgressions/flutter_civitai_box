@@ -11,7 +11,7 @@
 ## Testing Conventions (from existing codebase)
 
 | Convention | Detail |
-|------------|--------|
+| ------------ | -------- |
 | **Test runner** | `package:test/test.dart` (not `flutter_test`) |
 | **SQLite** | `sqflite_common_ffi` + `databaseFactoryFfi` with `:memory:` path |
 | **Mocking** | `package:mocktail` ^1.0.4 |
@@ -31,7 +31,7 @@
 These are pure Dart classes — no SQLite, no API, no Flutter. Fastest tests.
 
 | Step | Test File | Tests to Write | Production File |
-|------|-----------|----------------|-----------------|
+| ------ | ----------- | ---------------- | ----------------- |
 | 1.1 | `test/download/magazine_item_test.dart` | `MagazineItem.fromRow()` parses valid SQLite row<br>`MagazineItem.fromRow()` throws on missing required fields<br>`MagazineItem.toRow()` produces correct column map<br>`MagazineItem.toRow()` round-trips with `fromRow()` | `lib/services/download/download_magazine_item.dart` |
 | 1.2 | (same file) | `MagazineItemStatus.values` has exactly `[pending, firing, failed, skipped]`<br>Status enum serialization/deserialization | (same file) |
 | 1.3 | `test/download/load_result_test.dart` | `LoadResult.ok(item)` pattern matches as `LoadOk`<br>`LoadResult.error(err)` pattern matches as `LoadError_`<br>`LoadError` has correct `type`, `message`, `detail` fields<br>`LoadErrorType` has all expected variants | `lib/services/download/download_magazine_item.dart` (add `LoadResult`) |
@@ -48,7 +48,7 @@ These are pure Dart classes — no SQLite, no API, no Flutter. Fastest tests.
 Dependency: `CivitaiDatabase` (needs migration for the new table).
 
 | Step | Test File | Tests to Write | Production File |
-|------|-----------|----------------|-----------------|
+| ------ | ----------- | ---------------- | ----------------- |
 | 2.1 | `test/download/download_magazine_database_test.dart` | `insert()` persists a row and returns it<br>`insert()` rejects duplicate `model_version_id` (UNIQUE constraint)<br>`findByModelVersionId()` finds existing, returns null for missing | `lib/services/download/download_magazine_database.dart`<br>`lib/db/database.dart` (migration) |
 | 2.2 | (same file) | `loadAll()` returns all rows ordered by `id`<br>`loadPending()` returns only `status='pending'` rows<br>`loadFiring()` returns `status='firing'` row (null if none)<br>`findFiringRound()` returns the firing row (alias for `loadFiring`) | (same files) |
 | 2.3 | (same file) | `update()` changes status, retry_count, error_message<br>`update()` persists changes across DB close/reopen<br>`resetFiringToPending()` sets status='pending' preserving retry_count | (same files) |
@@ -73,7 +73,7 @@ Dependencies: `CivitaiApiClient` (mocked), `DownloadMagazineDatabase` (real, in-
 - `model_version_missing_modelId.json` — version without `modelId` field
 
 | Step | Test File | Tests to Write | Production File |
-|------|-----------|----------------|-----------------|
+| ------ | ----------- | ---------------- | ----------------- |
 | 3.1 | `test/download/download_magazine_resolver_test.dart` | `load()` with valid ID returns `LoadResult.ok` with correct parsed fields<br>`load()` sets `model_name`, `version_name`, `base_model`, `model_type` from API data<br>`load()` serializes `model_json` and `version_json` correctly<br>`load()` calculates `file_count` and `total_size_kb` correctly | `lib/services/download/download_magazine_resolver.dart` |
 | 3.2 | (same file) | `load()` rejects non-positive integer → `LoadError(invalidId)`<br>`load()` rejects duplicate (already in magazine) → `LoadError(alreadyInMagazine)` | (same file) |
 | 3.3 | (same file) | `load()` on API network error → `LoadError(networkError)`<br>`load()` on API 404 → `LoadError(apiError)` with status code<br>`load()` on API 403 → `LoadError(apiError)`<br>`load()` on API 500 → `LoadError(apiError)` | (same file) |
@@ -95,7 +95,7 @@ This is the most complex phase. Break into sub-phases.
 #### 4A — Fire: Basic Happy Path
 
 | Step | Test File | Tests to Write |
-|------|-----------|----------------|
+| ------ | ----------- | ---------------- |
 | 4.1 | `test/download/download_magazine_resolver_test.dart` (same file) | `fire()` with empty magazine emits only `FireEvent.done(zeros)` |
 | 4.2 | (same file) | `fire()` with one pending round: emits `roundStarted` → `roundCompleted` → `done(1,0,0)` |
 | 4.3 | (same file) | `fire()` with three pending rounds: processes all three sequentially, emits correct events, final `done(3,0,0)` |
@@ -105,7 +105,7 @@ This is the most complex phase. Break into sub-phases.
 #### 4B — Fire: Retry Logic
 
 | Step | Test File | Tests to Write |
-|------|-----------|----------------|
+| ------ | ----------- | ---------------- |
 | 4.6 | (same file) | `fire()` on 1st failure: increments `retry_count` to 1, resets status to `pending`, emits `retrying`, retries |
 | 4.7 | (same file) | `fire()` on 2nd failure: increments `retry_count` to 2, resets to `pending`, emits `retrying`, retries again |
 | 4.8 | (same file) | `fire()` on 3rd failure: increments `retry_count` to 3, sets status to `failed`, emits `jammed`, STOPS |
@@ -115,7 +115,7 @@ This is the most complex phase. Break into sub-phases.
 #### 4C — Fire: Unjam
 
 | Step | Test File | Tests to Write |
-|------|-----------|----------------|
+| ------ | ----------- | ---------------- |
 | 4.11 | (same file) | `skipFailedRound()` changes status to `skipped` |
 | 4.12 | (same file) | `fire()` after skip: continues to next `pending` round, emits `roundSkipped` in summary |
 | 4.13 | (same file) | `retryFailedRound()` resets `retry_count` to 0, status to `pending` |
@@ -145,7 +145,7 @@ This is the most complex phase. Break into sub-phases.
 **What**: `MagazineItemTile`, `DownloadMagazineTab`, integration into `DownloadPage`.
 
 | Step | Test File | Tests to Write | Production File |
-|------|-----------|----------------|-----------------|
+| ------ | ----------- | ---------------- | ----------------- |
 | 5.1 | `test/download/magazine_item_tile_test.dart` | Renders `pending` round with correct icon, model name, version name<br>Renders `firing` round with spinner<br>Renders `failed` round with error message and [Skip][Retry] buttons<br>Renders `skipped` round with "Skipped" text<br>Unload button triggers callback | `lib/ui/download/widgets/magazine_item_tile.dart` |
 | 5.2 | `test/download/download_magazine_tab_test.dart` | Load button disabled when input is empty<br>Load button disabled when input is non-integer<br>Fire button disabled when magazine is empty<br>Renders list of magazine items from state<br>Unload All shows confirmation dialog | `lib/ui/download/download_magazine_tab.dart` |
 | 5.3 | `test/download/download_page_test.dart` | TabBar shows both Fetch and Magazine tabs<br>Switching tabs preserves state<br>Queue section visible in both tabs | `lib/ui/download/download_page.dart` (modified) |
@@ -157,7 +157,7 @@ This is the most complex phase. Break into sub-phases.
 ### Phase 6 — Integration / End-to-End
 
 | Step | Test File | Tests to Write |
-|------|-----------|----------------|
+| ------ | ----------- | ---------------- |
 | 6.1 | `test/download/magazine_integration_test.dart` | Load → Fire → Verify JSON files on disk → Verify DB records |
 | 6.2 | (same file) | Load → Fire with failure → Retry 3x → Jam → Unjam(skip) → Continue |
 | 6.3 | (same file) | App restart simulation: Load rounds → kill during Fire → recover → Fire continues |
@@ -180,7 +180,7 @@ Phase 6: Integration     ⬜ remaining — Production wiring, DownloadPage refac
 ```
 
 | Phase | Tests | Runner | Key Files |
-|-------|-------|--------|-----------|
+| ------- | ------- | -------- | ----------- |
 | 1. Data Models | 54 | `dart test` | `download_magazine_item.dart` |
 | 2. Database | 11 | `flutter test` | `download_magazine_database.dart`, `tables.dart`, `database.dart` |
 | 3. `load()` | 13 | `flutter test` | `download_magazine_resolver.dart` |
@@ -190,10 +190,10 @@ Phase 6: Integration     ⬜ remaining — Production wiring, DownloadPage refac
 
 ### Remaining
 
-- [ ] `DownloadPage` TabBar refactoring (Fetch tab extraction + Magazine tab integration)
-- [ ] Production `downloadRound` wiring (real `DownloadQueue`, JSON file writes, `ModelRefreshBus`)
-- [ ] Crash recovery in `main()` (reset `firing` round, delete orphaned tasks)
-- [ ] Rust FFI expose `load()` and `fire()` via `flutter_rust_bridge`
+- [x] `DownloadPage` TabBar refactoring (Fetch tab extraction + Magazine tab integration) — done in `ac77bc0`
+- [x] Production `downloadRound` wiring (real `DownloadQueue`, JSON file writes, `ModelRefreshBus`) — done in `ac77bc0`
+- [x] Crash recovery in `main()` (reset `firing` round, delete orphaned tasks) — done in `ac77bc0`
+- ~~Rust FFI expose `load()` and `fire()` via `flutter_rust_bridge`~~ — **Removed (2026-08-08)**: no Rust integration planned; dependency removed. See `PROJECT_PROGRESS.md`.
 
 ---
 
@@ -202,7 +202,7 @@ Phase 6: Integration     ⬜ remaining — Production wiring, DownloadPage refac
 Created in `test/data/magazine/`:
 
 | File | Contents | Status |
-|------|----------|--------|
+| ------ | ---------- | -------- |
 | `model_version_123456.json` | Complete ModelVersionEndpointData response with 2 files + 2 images | ✅ Created |
 | `model_789.json` | Model endpoint response (Checkpoint, creator, tags) | ✅ Created |
 | `model_version_no_files.json` | Version response with empty files/images | ✅ Created |

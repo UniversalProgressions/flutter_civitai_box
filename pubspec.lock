@@ -73,14 +73,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.0.6"
-  build_cli_annotations:
-    dependency: transitive
-    description:
-      name: build_cli_annotations
-      sha256: e563c2e01de8974566a1998410d3f6f03521788160a02503b0b1f1a46c7b3d95
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.1"
   build_config:
     dependency: transitive
     description:
@@ -161,6 +153,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.2.0"
+  code_builder:
+    dependency: transitive
+    description:
+      name: code_builder
+      sha256: "6a6cab2ba4680d6423f34a9b972a4c9a94ebe1b62ecec4e1a1f2cba91fd1319d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.11.1"
   collection:
     dependency: transitive
     description:
@@ -334,14 +334,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.34"
-  flutter_rust_bridge:
-    dependency: "direct main"
-    description:
-      name: flutter_rust_bridge
-      sha256: "37ef40bc6f863652e865f0b2563ea07f0d3c58d8efad803cc01933a4b2ee067e"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.11.1"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -424,6 +416,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.6.0"
+  http_methods:
+    dependency: transitive
+    description:
+      name: http_methods
+      sha256: "6bccce8f1ec7b5d701e7921dca35e202d425b57e317ba1a37f2638590e29e566"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.1"
   http_multi_server:
     dependency: transitive
     description:
@@ -624,6 +624,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.4.1"
+  open_api_specification:
+    dependency: transitive
+    description:
+      name: open_api_specification
+      sha256: cf67ae1f6c3b12ee745caf1e87616fc41bd23badb1fda93cf3d3847325d110ec
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.1"
   package_config:
     dependency: transitive
     description:
@@ -760,6 +768,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.5.0"
+  recase:
+    dependency: transitive
+    description:
+      name: recase
+      sha256: e4eb4ec2dcdee52dcf99cb4ceabaffc631d7424ee55e56f280bc039737f89213
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.0"
   record_use:
     dependency: transitive
     description:
@@ -857,13 +873,29 @@ packages:
     source: hosted
     version: "2.4.1"
   shelf:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: shelf
       sha256: e7dd780a7ffb623c57850b33f43309312fc863fb6aa3d276a754bb299839ef12
       url: "https://pub.dev"
     source: hosted
     version: "1.4.2"
+  shelf_open_api:
+    dependency: "direct main"
+    description:
+      name: shelf_open_api
+      sha256: "9b9671c1f76f7a33ebf12cce0b0409f9bf5168815ba5bdd19fb6967be35073e4"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.0"
+  shelf_open_api_generator:
+    dependency: "direct dev"
+    description:
+      name: shelf_open_api_generator
+      sha256: "72858be551a708c6759e3fefbe94557d6fdd9725518583b2b33e2388be3a8ff3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.2.3"
   shelf_packages_handler:
     dependency: transitive
     description:
@@ -872,6 +904,30 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.2"
+  shelf_router:
+    dependency: transitive
+    description:
+      name: shelf_router
+      sha256: f5e5d492440a7fb165fe1e2e1a623f31f734d3370900070b2b1e0d0428d59864
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.4"
+  shelf_routing:
+    dependency: transitive
+    description:
+      name: shelf_routing
+      sha256: "3ae2c56fc3428c081cae62280c4d60db79c5dbd8181af58aa2b0c6af961def7a"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
+  shelf_routing_generator:
+    dependency: transitive
+    description:
+      name: shelf_routing_generator
+      sha256: "3a6d2e7e544be3aed2730515b1f548451b56eed4b9ebdc985b5f91a130536c18"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.3"
   shelf_static:
     dependency: transitive
     description:

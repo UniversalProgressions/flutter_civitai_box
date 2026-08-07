@@ -5,6 +5,7 @@
 | Document | Scope | Status |
 |----------|-------|--------|
 | [design.md](design.md) | Existing download system — `download_task`, `DownloadQueue`, file layout | ✅ Production |
+| [analysis.md](analysis.md) | Download feature + UI deep analysis — duplicate-task root causes, UX pain points, improvement plan | 📝 2026-08-08 |
 | [magazine-design.md](magazine-design.md) | Magazine staging system — `load()` / `fire()`, `download_magazine` table, state machine | ✅ Design final |
 | [magazine-tdd-plan.md](magazine-tdd-plan.md) | TDD implementation phases with test counts per step | 🔨 ~92% done |
 | [magazine-integration.md](magazine-integration.md) | How magazine connects to existing code — wiring, crash recovery, data flow | 📝 Reference |
@@ -16,6 +17,7 @@
 | I want to... | Read |
 |--------------|------|
 | Understand the existing download system | [design.md](design.md) |
+| Understand the duplicate-task / UX issues and fix plan | [analysis.md](analysis.md) |
 | Understand the magazine metaphor & data model | [magazine-design.md](magazine-design.md) |
 | See what's implemented and what's left | [magazine-tdd-plan.md](magazine-tdd-plan.md) |
 | Know how to wire magazine into the app | [magazine-integration.md](magazine-integration.md) |

@@ -357,11 +357,11 @@ The `downloadRound` injectable callback is the key testability seam:
 
 ---
 
-## Remaining Integration Steps
+## Integration Steps
 
-1. **Extract `DownloadFetchTab`** — Move existing fetch logic from `DownloadPage` into a standalone widget (pure refactor, no behavior change)
-2. **Create `DownloadMagazineTab`** — Stateful widget with input, round list, Fire button, status bar
-3. **Update `DownloadPage`** — Add `TabBar` + `TabBarView` with both tabs, shared queue section
-4. **Wire production `downloadRound`** — Connect to real `DownloadQueue`, file writes, `ModelRefreshBus`
-5. **Crash recovery in `main()`** — Call `_recoverFromCrash()` after DB init
-6. **Rust FFI** — Expose `load()` and `fire()` via `flutter_rust_bridge`
+1. ✅ **Extract `DownloadFetchTab`** — Move existing fetch logic from `DownloadPage` into a standalone widget (pure refactor, no behavior change)
+2. ✅ **Create `DownloadMagazineTab`** — Stateful widget with input, round list, Fire button, status bar
+3. ✅ **Update `DownloadPage`** — Add `TabBar` + `TabBarView` with both tabs, shared queue section
+4. ✅ **Wire production `downloadRound`** — Connect to real `DownloadQueue`, file writes, `ModelRefreshBus`
+5. ✅ **Crash recovery in `main()`** — Call `_recoverMagazineFromCrash()` after DB init
+6. ~~**Rust FFI**~~ — **Removed (2026-08-08)**: Rust integration is not planned; `flutter_rust_bridge` dependency removed. See `PROJECT_PROGRESS.md`.
