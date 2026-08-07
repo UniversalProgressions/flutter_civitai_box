@@ -5,14 +5,70 @@ import '../../../services/download/download_task.dart';
 import '../../animation.dart';
 
 /// A single file's download progress within a batch.
-class DownloadTaskTile extends StatelessWidget {
+class DownloadTaskTile extends StatefulWidget {
   final DownloadTask task;
 
   const DownloadTaskTile({super.key, required this.task});
 
   @override
+  State<DownloadTaskTile> createState() => _DownloadTaskTileState();
+}
+
+class _DownloadTaskTileState extends State<DownloadTaskTile> {
+  double? _lastProgress;
+  DateTime? _lastTime;
+  double _speedKbPerSec = 0;
+
+  DownloadTask get task => widget.task;
+
+  /// Compute live download speed from progress deltas between builds.
+  /// Only meaningful while the task is downloading and its size is known
+  /// (media files have `fileSizeKb == 0`, so their speed shows nothing).
+  void _updateSpeed() {
+    final t = task;
+    if (t.status == DownloadTaskStatus.downloading && t.fileSizeKb > 0) {
+      final now = DateTime.now();
+      final lastP = _lastProgress;
+      final lastT = _lastTime;
+      if (lastP != null && lastT != null) {
+        final dProgress = t.progress - lastP;
+        final dSec = now.difference(lastT).inMilliseconds / 1000.0;
+        if (dSec > 0) {
+          _speedKbPerSec = (dProgress * t.fileSizeKb) / dSec;
+        }
+      } else {
+        _speedKbPerSec = 0;
+      }
+      _lastProgress = t.progress;
+      _lastTime = now;
+    } else {
+      _speedKbPerSec = 0;
+      _lastProgress = null;
+      _lastTime = null;
+    }
+  }
+
+  String _progressLabel() {
+    final pct = '${(task.progress * 100).toStringAsFixed(0)}%';
+    final size = task.sizeFormatted;
+    if (_speedKbPerSec > 0) {
+      return '$pct  ·  $size  ·  ${_formatSpeed(_speedKbPerSec)}';
+    }
+    return '$pct  ·  $size';
+  }
+
+  static String _formatSpeed(double kbPerSec) {
+    if (kbPerSec >= 1024) {
+      return '${(kbPerSec / 1024).toStringAsFixed(1)} MB/s';
+    }
+    return '${kbPerSec.toStringAsFixed(0)} KB/s';
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    _updateSpeed();
+    final isDownloading = task.status == DownloadTaskStatus.downloading;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
@@ -26,15 +82,20 @@ class DownloadTaskTile extends StatelessWidget {
               children: [
                 Text(
                   task.fileName,
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(
+                    fontSize: 12,
+                    // Highlight the file currently being downloaded.
+                    fontWeight: isDownloading ? FontWeight.w600 : null,
+                    color: isDownloading ? theme.colorScheme.primary : null,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
-                if (task.status == DownloadTaskStatus.downloading) ...[
+                if (isDownloading) ...[
                   JellyProgressBar(value: task.progress, height: 4),
                   const SizedBox(height: 2),
                   Text(
-                    '${(task.progress * 100).toStringAsFixed(0)}%  ·  ${task.sizeFormatted}',
+                    _progressLabel(),
                     style: TextStyle(
                       fontSize: 10,
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.6),

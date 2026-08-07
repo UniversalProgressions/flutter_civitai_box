@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../services/download/download_queue.dart';
 import '../../../services/download/download_task.dart';
 import 'download_task_tile.dart';
 
@@ -73,10 +74,32 @@ class _DownloadBatchCardState extends State<DownloadBatchCard> {
     return total / widget.tasks.length;
   }
 
+  /// Whether the batch has any unfinished (pending/downloading/failed) task.
+  bool get _isActive => widget.tasks.any(
+    (t) =>
+        t.status == DownloadTaskStatus.pending ||
+        t.status == DownloadTaskStatus.downloading ||
+        t.status == DownloadTaskStatus.failed,
+  );
+
   int get _totalFiles => widget.tasks.length;
 
   double get _totalSizeKb =>
       widget.tasks.fold<double>(0, (s, t) => s + t.fileSizeKb);
+
+  /// Human-readable batch title — model name (fallback to numeric IDs).
+  ///
+  /// [DownloadTask.versionName] already includes the "v" prefix (e.g. "v8"),
+  /// so it is shown as-is.
+  String get _batchTitle {
+    final first = widget.tasks.first;
+    final name = first.modelName;
+    if (name != null) {
+      final version = first.versionName;
+      return version != null ? '$name - $version' : name;
+    }
+    return '${first.modelId} / v${first.modelVersionId}';
+  }
 
   String get _sizeFormatted {
     if (_totalSizeKb >= 1024 * 1024) {
@@ -109,7 +132,7 @@ class _DownloadBatchCardState extends State<DownloadBatchCard> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '${widget.tasks.first.modelId} / v${widget.tasks.first.modelVersionId}',
+                          _batchTitle,
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
@@ -141,6 +164,21 @@ class _DownloadBatchCardState extends State<DownloadBatchCard> {
                     size: 20,
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                   ),
+                  if (_isActive) ...[
+                    if (_batchStatus == DownloadTaskStatus.failed)
+                      IconButton(
+                        icon: const Icon(Icons.refresh, size: 18),
+                        tooltip: 'Retry batch',
+                        onPressed: () =>
+                            DownloadQueue.instance.retryBatch(widget.batchId),
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.cancel, size: 18),
+                      tooltip: 'Cancel batch',
+                      onPressed: () =>
+                          DownloadQueue.instance.cancelBatch(widget.batchId),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -35,14 +35,18 @@ MagazineItem _sample({
 void main() {
   group('DownloadMagazineTab', () {
     testWidgets('Load button disabled when input empty', (tester) async {
-      await tester.pumpWidget(_wrap(const DownloadMagazineTab()));
+      await tester.pumpWidget(
+        _wrap(const DownloadMagazineTab(initialRounds: [])),
+      );
       final loadBtn = find.widgetWithText(ElevatedButton, 'Load');
       final btn = tester.widget<ElevatedButton>(loadBtn);
       expect(btn.onPressed, isNull);
     });
 
     testWidgets('Fire button disabled when magazine empty', (tester) async {
-      await tester.pumpWidget(_wrap(const DownloadMagazineTab()));
+      await tester.pumpWidget(
+        _wrap(const DownloadMagazineTab(initialRounds: [])),
+      );
       final fireBtn = find.widgetWithText(ElevatedButton, 'Fire');
       final btn = tester.widget<ElevatedButton>(fireBtn);
       expect(btn.onPressed, isNull);
@@ -70,8 +74,8 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Model A'), findsOneWidget);
-      expect(find.text('Model B'), findsOneWidget);
+      expect(find.textContaining('Model A'), findsOneWidget);
+      expect(find.textContaining('Model B'), findsOneWidget);
     });
 
     testWidgets('shows failed round with skip/retry buttons', (tester) async {
@@ -90,7 +94,7 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Failed Model'), findsOneWidget);
+      expect(find.textContaining('Failed Model'), findsOneWidget);
       expect(find.text('Skip'), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
     });
@@ -111,6 +115,24 @@ void main() {
       final fireBtn = find.widgetWithText(ElevatedButton, 'Fire');
       final btn = tester.widget<ElevatedButton>(fireBtn);
       expect(btn.onPressed, isNull);
+    });
+
+    testWidgets('switching to Model ID mode shows Browse button', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(const DownloadMagazineTab(initialRounds: [])),
+      );
+      // Default: version mode shows a "Load" button.
+      expect(find.widgetWithText(ElevatedButton, 'Load'), findsOneWidget);
+      expect(find.text('Browse'), findsNothing);
+
+      // Switch to Model ID mode.
+      await tester.tap(find.text('Model ID'));
+      await tester.pump();
+
+      expect(find.widgetWithText(ElevatedButton, 'Browse'), findsOneWidget);
+      expect(find.text('Load'), findsNothing);
     });
   });
 }
