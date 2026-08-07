@@ -14,12 +14,16 @@ class DownloadDatabase {
   // ---------------------------------------------------------------------------
 
   /// Insert a single task.
+  ///
+  /// Uses [ConflictAlgorithm.ignore]: if a task for the same
+  /// (model_version_id, target_path) already exists, the new row is skipped
+  /// (idempotency safety net).
   Future<void> insert(DownloadTask task) async {
     final db = await _db;
     await db.insert(
       'download_task',
       task.toRow(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+      conflictAlgorithm: ConflictAlgorithm.ignore,
     );
   }
 
@@ -32,7 +36,7 @@ class DownloadDatabase {
       batch.insert(
         'download_task',
         t.toRow(),
-        conflictAlgorithm: ConflictAlgorithm.replace,
+        conflictAlgorithm: ConflictAlgorithm.ignore,
       );
     }
     await batch.commit(noResult: true);

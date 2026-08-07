@@ -190,6 +190,12 @@ final class ModelVersionRepository {
         versionId,
       ]);
 
+      // Clean up download queue records for this version (no FK cascade).
+      await txn.rawDelete(
+        'DELETE FROM download_task WHERE model_version_id = ?',
+        [versionId],
+      );
+
       // If no versions remain, delete the model too
       final remainingRow = await txn.rawQuery(
         'SELECT COUNT(*) AS cnt FROM model_version WHERE model_id = ?',

@@ -283,11 +283,63 @@ Future<bool> _productionDownloadRound(
     final modelId = item.modelId;
     final versionId = item.modelVersionId;
 
-    // 3. Build batch ID
-    final batchId =
-        'mag-${modelId}-${versionId}-${DateTime.now().millisecondsSinceEpoch}';
+    // 3. Reuse existing tasks for this version to avoid duplicates.
+    // A failed round is retried by resetting the SAME task rows (retryBatch),
+    // never by enqueueing a brand-new batch.
+    final existing = await DownloadQueue.instance.tasksForVersion(versionId);
+    if (existing.isNotEmpty) {
+      final batchId = existing.first.batchId;
+      final hasActive = existing.any(
+        (t) =>
+            t.status != DownloadTaskStatus.completed &&
+            t.status != DownloadTaskStatus.cancelled,
+      );
+      final hasFailed = existing.any(
+        (t) => t.status == DownloadTaskStatus.failed,
+      );
 
-    // 4. Resolve model file URLs
+      if (hasFailed) {
+        // Some tasks failed -> reset + re-run the whole batch.
+        await DownloadQueue.instance.retryBatch(batchId);
+      } else if (!hasActive) {
+        // All finished. If every file is still on disk the round is already
+        // done (no re-download, no duplicates); otherwise re-run to fetch the
+        // missing files.
+        final allPresent = await _allFilesExist(existing);
+        if (allPresent) {
+          await _finishRound(
+            basePath,
+            modelType,
+            modelId,
+            versionId,
+            modelMap,
+            versionMap,
+          );
+          return true;
+        }
+        await DownloadQueue.instance.retryBatch(batchId);
+      }
+
+      // Otherwise (in progress) just wait for the batch to finish.
+      final success = await _waitForBatch(batchId);
+      if (success) {
+        await _finishRound(
+          basePath,
+          modelType,
+          modelId,
+          versionId,
+          modelMap,
+          versionMap,
+        );
+      }
+      return success;
+    }
+
+    // 4. Build batch ID
+    final batchId =
+        'mag-$modelId-$versionId-${DateTime.now().millisecondsSinceEpoch}';
+
+    // 5. Resolve model file URLs
     final files = (versionMap['files'] as List?) ?? [];
     final modelTasks = <DownloadTask>[];
     for (final f in files) {
@@ -301,6 +353,8 @@ Future<bool> _productionDownloadRound(
           batchId: batchId,
           modelId: modelId,
           modelVersionId: versionId,
+          modelName: item.modelName,
+          versionName: item.versionName,
           fileName: f['name'] as String,
           fileSizeKb: (f['sizeKB'] as num?)?.toDouble() ?? 0,
           downloadUrl: resolvedUrl,
@@ -312,7 +366,7 @@ Future<bool> _productionDownloadRound(
       );
     }
 
-    // 5. Resolve media URLs
+    // 6. Resolve media URLs
     final images = (versionMap['images'] as List?) ?? [];
     final mediaTasks = <DownloadTask>[];
     for (final img in images) {
@@ -328,6 +382,8 @@ Future<bool> _productionDownloadRound(
           batchId: batchId,
           modelId: modelId,
           modelVersionId: versionId,
+          modelName: item.modelName,
+          versionName: item.versionName,
           fileName: '$imageId$ext',
           fileSizeKb: 0,
           downloadUrl: resolvedUrl,
@@ -339,12 +395,12 @@ Future<bool> _productionDownloadRound(
       );
     }
 
-    // 6. No apiJson tasks — JSON files written after success
+    // 7. No apiJson tasks — JSON files written after success
     final allTasks = <DownloadTask>[...modelTasks, ...mediaTasks];
     if (allTasks.isEmpty) {
       logger.warning('No downloadable files for version $versionId');
       // Still write JSON files and mark success
-      await _writeApiJsonFiles(
+      await _finishRound(
         basePath,
         modelType,
         modelId,
@@ -352,12 +408,10 @@ Future<bool> _productionDownloadRound(
         modelMap,
         versionMap,
       );
-      await _upsertToDb(modelMap, versionMap);
-      ModelRefreshBus.instance.notify();
       return true;
     }
 
-    // 7. Enqueue to DownloadQueue
+    // 8. Enqueue to DownloadQueue
     await DownloadQueue.instance.enqueueBatch(
       batchId: batchId,
       apiJsonTasks: const [],
@@ -365,12 +419,12 @@ Future<bool> _productionDownloadRound(
       mediaTasks: mediaTasks,
     );
 
-    // 8. Wait for batch completion
+    // 9. Wait for batch completion
     final success = await _waitForBatch(batchId);
     if (!success) return false;
 
-    // 9. Write API JSON files to disk (completion markers)
-    await _writeApiJsonFiles(
+    // 10. Completion markers + DB upsert + notify
+    await _finishRound(
       basePath,
       modelType,
       modelId,
@@ -378,12 +432,6 @@ Future<bool> _productionDownloadRound(
       modelMap,
       versionMap,
     );
-
-    // 10. Upsert to local DB
-    await _upsertToDb(modelMap, versionMap);
-
-    // 11. Notify
-    ModelRefreshBus.instance.notify();
 
     return true;
   } catch (e, st) {
@@ -444,6 +492,36 @@ Future<bool> _waitForBatch(String batchId) async {
   });
 
   return completer.future;
+}
+
+/// True if every task's target file exists on disk.
+Future<bool> _allFilesExist(List<DownloadTask> tasks) async {
+  for (final t in tasks) {
+    if (t.targetPath.isEmpty) continue;
+    if (!await File(t.targetPath).exists()) return false;
+  }
+  return true;
+}
+
+/// Completion markers + DB upsert + refresh notification for a round.
+Future<void> _finishRound(
+  String basePath,
+  String modelType,
+  int modelId,
+  int versionId,
+  Map<String, dynamic> modelJson,
+  Map<String, dynamic> versionJson,
+) async {
+  await _writeApiJsonFiles(
+    basePath,
+    modelType,
+    modelId,
+    versionId,
+    modelJson,
+    versionJson,
+  );
+  await _upsertToDb(modelJson, versionJson);
+  ModelRefreshBus.instance.notify();
 }
 
 /// Write API JSON files to disk.

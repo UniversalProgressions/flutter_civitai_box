@@ -26,17 +26,20 @@ void main() {
     double progress = 0,
     String fileType = 'model',
     int modelVersionId = 10,
-    String fileName = 'model.safetensors',
+    String? fileName,
   }) {
+    // Each task needs a distinct (model_version_id, target_path) because of
+    // the idempotency unique index. Derive a unique filename from the task id.
+    final name = fileName ?? 'model-$id.safetensors';
     return DownloadTask(
       id: id,
       batchId: batchId,
       modelId: 1,
       modelVersionId: modelVersionId,
-      fileName: fileName,
+      fileName: name,
       fileSizeKb: 1024,
-      downloadUrl: 'https://example.com/$fileName',
-      targetPath: '/tmp/$fileName',
+      downloadUrl: 'https://example.com/$name',
+      targetPath: '/tmp/$name',
       fileType: DownloadFileType.values.firstWhere((t) => t.name == fileType),
       status: status.asStatus,
       progress: progress,

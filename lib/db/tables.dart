@@ -217,6 +217,8 @@ CREATE TABLE IF NOT EXISTS download_task (
   batch_id             TEXT    NOT NULL,
   model_id             INTEGER NOT NULL,
   model_version_id     INTEGER NOT NULL,
+  model_name           TEXT,
+  version_name         TEXT,
   file_name            TEXT    NOT NULL,
   file_size_kb         REAL    NOT NULL,
   download_url         TEXT    NOT NULL,
@@ -231,6 +233,10 @@ CREATE TABLE IF NOT EXISTS download_task (
 );
 CREATE INDEX IF NOT EXISTS idx_download_task_batch ON download_task(batch_id);
 CREATE INDEX IF NOT EXISTS idx_download_task_status ON download_task(status);
+-- Idempotency: the same file (model_version_id + target_path) may only have
+-- one task row. Duplicate inserts are skipped (ConflictAlgorithm.ignore).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_download_task_version_path
+  ON download_task(model_version_id, target_path);
 ''';
 
 const String createDownloadMagazineTable = '''

@@ -30,6 +30,8 @@ class DownloadTask {
   final String batchId;
   final int modelId;
   final int modelVersionId;
+  final String? modelName;
+  final String? versionName;
   final String fileName;
   final double fileSizeKb;
   final String downloadUrl;
@@ -47,6 +49,8 @@ class DownloadTask {
     required this.batchId,
     required this.modelId,
     required this.modelVersionId,
+    this.modelName,
+    this.versionName,
     required this.fileName,
     required this.fileSizeKb,
     required this.downloadUrl,
@@ -66,6 +70,8 @@ class DownloadTask {
       batchId: row['batch_id'] as String,
       modelId: row['model_id'] as int,
       modelVersionId: row['model_version_id'] as int,
+      modelName: row['model_name'] as String?,
+      versionName: row['version_name'] as String?,
       fileName: row['file_name'] as String,
       fileSizeKb: (row['file_size_kb'] as num).toDouble(),
       downloadUrl: row['download_url'] as String,
@@ -85,6 +91,8 @@ class DownloadTask {
     'batch_id': batchId,
     'model_id': modelId,
     'model_version_id': modelVersionId,
+    'model_name': modelName,
+    'version_name': versionName,
     'file_name': fileName,
     'file_size_kb': fileSizeKb,
     'download_url': downloadUrl,

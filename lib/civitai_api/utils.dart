@@ -63,6 +63,9 @@ Model modelId2Model(ModelById data) {
 String? extractFilenameFromUrl(String url) {
   try {
     final uri = Uri.parse(url);
+    // Require an absolute URL with a host; relative or malformed strings
+    // (e.g. "not-a-url") are treated as invalid.
+    if (!uri.hasScheme || uri.host.isEmpty) return null;
     final segments = uri.pathSegments
         .where((s) => s.trim().isNotEmpty)
         .toList();

@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_civitai_box/civitai_api/utils.dart';
 import 'package:flutter_civitai_box/db/db.dart';
+import 'package:flutter_civitai_box/services/download/download_database.dart';
+import 'package:flutter_civitai_box/services/download/download_task.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:test/test.dart';
 
@@ -485,6 +487,37 @@ void main() {
       expect(await modelDao.getById(1595884), isNotNull);
       expect(await versionDao.getById(999001), isNotNull);
     });
+
+    test(
+      'deleteVersion cleans download_task records for the version',
+      () async {
+        const downloadDb = DownloadDatabase();
+        await downloadDb.insert(
+          DownloadTask(
+            id: 'dt-1',
+            batchId: 'b1',
+            modelId: 1595884,
+            modelVersionId: 1805971,
+            modelName: 'Test',
+            versionName: 'v1',
+            fileName: 'model.safetensors',
+            fileSizeKb: 1024,
+            downloadUrl: 'https://example.com/model.safetensors',
+            targetPath: '/tmp/model.safetensors',
+            fileType: DownloadFileType.model,
+            status: DownloadTaskStatus.pending,
+            createdAt: '2026-06-02T00:00:00.000',
+            updatedAt: '2026-06-02T00:00:00.000',
+          ),
+        );
+
+        const repo = ModelVersionRepository();
+        await repo.deleteVersion(1805971);
+
+        final remaining = await downloadDb.loadAll();
+        expect(remaining, isEmpty);
+      },
+    );
 
     test('deleteVersion on non-existent version throws', () async {
       const repo = ModelVersionRepository();

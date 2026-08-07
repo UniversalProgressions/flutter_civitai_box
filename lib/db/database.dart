@@ -44,7 +44,7 @@ class CivitaiDatabase {
 
     _database = await openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onConfigure: _onConfigure,
@@ -91,6 +91,29 @@ class CivitaiDatabase {
         'ALTER TABLE model_version_image_v3 RENAME TO model_version_image',
       );
     }
+    if (oldVersion < 4) {
+      // Add display names to download_task for readable queue cards.
+      await db.execute('ALTER TABLE download_task ADD COLUMN model_name TEXT');
+      await db.execute(
+        'ALTER TABLE download_task ADD COLUMN version_name TEXT',
+      );
+    }
+    if (oldVersion < 5) {
+      // Idempotency: deduplicate existing download_task rows (keep the latest
+      // inserted row per model_version_id + target_path), then enforce
+      // uniqueness going forward.
+      await db.execute('''
+        DELETE FROM download_task
+        WHERE rowid NOT IN (
+          SELECT MAX(rowid) FROM download_task
+          GROUP BY model_version_id, target_path
+        )
+      ''');
+      await db.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_download_task_version_path
+          ON download_task(model_version_id, target_path)
+      ''');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -111,7 +134,7 @@ class CivitaiDatabase {
     _instance = CivitaiDatabase._();
     _database = await openDatabase(
       path,
-      version: 2,
+      version: 5,
       onCreate: _instance!._onCreate,
       onUpgrade: _instance!._onUpgrade,
       onConfigure: _instance!._onConfigure,
