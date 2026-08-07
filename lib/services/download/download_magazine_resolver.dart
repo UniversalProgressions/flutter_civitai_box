@@ -339,13 +339,16 @@ Future<bool> _productionDownloadRound(
     final batchId =
         'mag-$modelId-$versionId-${DateTime.now().millisecondsSinceEpoch}';
 
-    // 5. Resolve model file URLs
+    // 5. Resolve model file URLs (in parallel) and build tasks
     final files = (versionMap['files'] as List?) ?? [];
+    final modelFiles = files.where((f) => f['type'] == 'Model').toList();
+    final resolvedModelUrls = await Future.wait(
+      modelFiles.map((f) async => _resolveUrl(f['downloadUrl'] as String, api)),
+    );
     final modelTasks = <DownloadTask>[];
-    for (final f in files) {
-      if (f['type'] != 'Model') continue;
-      final rawUrl = f['downloadUrl'] as String;
-      final resolvedUrl = await _resolveUrl(rawUrl, api);
+    for (var i = 0; i < modelFiles.length; i++) {
+      final f = modelFiles[i];
+      final resolvedUrl = resolvedModelUrls[i];
       final filesDir = getFilesDir(basePath, modelType, modelId, versionId);
       modelTasks.add(
         DownloadTask(
@@ -366,13 +369,19 @@ Future<bool> _productionDownloadRound(
       );
     }
 
-    // 6. Resolve media URLs
+    // 6. Resolve media URLs (in parallel) and build tasks
     final images = (versionMap['images'] as List?) ?? [];
+    final mediaImages = images
+        .where((img) => (img['type'] ?? 'image') == 'image')
+        .toList();
+    final resolvedMediaUrls = await Future.wait(
+      mediaImages.map((img) async => _resolveUrl(img['url'] as String, api)),
+    );
     final mediaTasks = <DownloadTask>[];
-    for (final img in images) {
-      if ((img['type'] ?? 'image') != 'image') continue;
+    for (var i = 0; i < mediaImages.length; i++) {
+      final img = mediaImages[i];
       final rawUrl = img['url'] as String;
-      final resolvedUrl = await _resolveUrl(rawUrl, api);
+      final resolvedUrl = resolvedMediaUrls[i];
       final imageId = extractIdFromImageUrl(rawUrl) ?? 0;
       final ext = _extFromUrl(rawUrl);
       final mediaDir = getMediaDir(basePath, modelType, modelId, versionId);

@@ -163,11 +163,21 @@
   Model 模式下输入模型 ID → "Browse" → 显示模型版本列表（名称/基础模型/首文件/缩略图，
   复用了 `ModelById` 自带版本数据，**单次 API 调用，无 N+1**）→ 勾选一个或多个 → "Load (n)"
   逐个调用 `load()` 装填进 Magazine（已存在的自动跳过）。返回按钮回到 Magazine 列表。
-- 全项目 **341/341 测试通过**（新增 Magazine tab 模式切换测试）。
+- **下载启动慢的根因与修复（P-性能）**：
+  - **根因**：`resolveFileDownloadUrl` 原实现用 `GET + followRedirects: true`，会跟随重定向
+    **把整个文件内容下载进内存**，只为拿到 `realUri`，随后丢弃 → 每个文件实际被下载两遍
+    （一遍浪费在"解析 URL"、一遍真正下载），且全部**串行**。一个版本 10 张图 + 1 个大模型，
+    会在"开始下载"前先把 11 个文件整个拉一遍 → 这就是"等很久才能开始"的直接原因。
+  - **修复**：
+    1. `resolveFileDownloadUrl` 改为 `followRedirects: false` + **只读 `Location` 头**返回目标 URL，
+       绝不下载文件体；加 15s 超时；`validateStatus` 放行 3xx 以读取重定向。
+    2. `_productionDownloadRound` 用 `Future.wait` **并行**解析所有模型/媒体 URL。
+  - 另：`load()` 仅 2 个串行请求，非瓶颈。
+- 全项目 **343/343 测试通过**（新增 resolveFileDownloadUrl 重定向解析测试 2 个）。
 
 ### 待办 ⏳
 
-- 暂无（下载功能 P0/P1/P2 全部完成）。
+- 暂无（下载功能 P0/P1/P2 + 性能修复全部完成）。
 
 ### 备注
 

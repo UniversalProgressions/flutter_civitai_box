@@ -109,9 +109,10 @@ TDD 实现的"装填 → 审阅 → 开火"下载暂存系统，已完整提交�
   - 删除模型 → 清该版本 `download_task` 记录；取消未完成任务 → 清理其部分文件。
   - 设计确认：媒体文件始终与模型一起下载/删除，**不做"仅模型"选项**。
   - **Magazine Load 支持 Model ID**：标签页顶部 Version/Model 切换，Model 模式下浏览版本→勾选→装填（单次 API 调用）。
+  - **下载启动慢修复**：`resolveFileDownloadUrl` 改为不跟随重定向、只读 `Location` 头（原先 GET+followRedirects 会把整个文件下载进内存，每个文件被下两遍且串行 → 下载迟迟不开始）；URL 解析改并行。
   - 修复既有 `utils_test` 失败。
-- **验证**：`flutter analyze` 无新增问题；**全项目 341/341 测试通过**。
-- **待办**：无（下载功能 P0/P1/P2 全部完成）。
+- **验证**：`flutter analyze` 无新增问题；**全项目 343/343 测试通过**。
+- **待办**：无（下载功能 P0/P1/P2 + 性能修复全部完成）。
 - **详细进度**：见 `docs/download/analysis.md`。
 
 ---

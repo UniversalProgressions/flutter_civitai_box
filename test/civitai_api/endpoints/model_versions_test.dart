@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:test/test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -110,6 +112,54 @@ void main() {
               ),
         ),
       );
+    });
+
+    test(
+      'returns redirect target from Location header (no body download)',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final base = 'http://localhost:${server.port}';
+        server.listen((request) {
+          request.response
+            ..statusCode = 302
+            ..headers.set('location', '$base/final/file.safetensors')
+            ..close();
+        });
+
+        try {
+          final endpoint = ModelVersionsEndpoint(Dio());
+          final result = await endpoint.resolveFileDownloadUrl(
+            '$base/download',
+            'test-token',
+          );
+          expect(result, '$base/final/file.safetensors');
+        } finally {
+          await server.close();
+        }
+      },
+    );
+
+    test('returns the url itself when there is no redirect', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final base = 'http://localhost:${server.port}';
+      server.listen((request) {
+        request.response
+          ..statusCode = 200
+          ..headers.set('content-type', 'text/plain')
+          ..write('ok')
+          ..close();
+      });
+
+      try {
+        final endpoint = ModelVersionsEndpoint(Dio());
+        final result = await endpoint.resolveFileDownloadUrl(
+          '$base/file.txt',
+          'test-token',
+        );
+        expect(result, '$base/file.txt');
+      } finally {
+        await server.close();
+      }
     });
   });
 }
