@@ -90,6 +90,19 @@ TDD 实现的"装填 → 审阅 → 开火"下载暂存系统，已完整提交�
 
 ## 剩余工作与决策
 
+### 0. 打包发布 — 正式对外发布前的 3 件待办（待处理 ⏸️）
+
+- **状态**：待处理（2026-08-09 记录，用户决定之后再做）
+- 三件事：
+  1. **替换正式品牌图标**：当前 MSIX/AppImage 用 Flutter 默认图标占位，需换成真正的
+     应用图标（512×512 PNG），并更新 `windows/packaging/msix/make_config.yaml` 的
+     `logo_path` 和 `linux/packaging/appimage/make_config.yaml` 的 `icon`。
+  2. **MSIX 真实代码签名**：当前用内置 `Msix Testing` 测试证书（安装有 SmartScreen 警告），
+     正式发布需在 `windows/packaging/msix/make_config.yaml` 配置
+     `certificate_path` / `certificate_password` / `publisher`。
+  3. **macOS 公证**：当前未配置 Apple Developer 证书（Gatekeeper 会拦截），
+     正式发布需开发者证书 + 公证流程（`notarytool`）。
+
 ### 1. 修复 4 个失败的 widget 测试（已完成 ✅）
 
 - **状态**：已修复（2026-08-08）

@@ -5,13 +5,19 @@
 
 ## 目标安装包
 
-| 平台 | 格式 | 说明 |
-| ---- | ---- | ---- |
-| Windows | **MSIX** | 现代 Windows 安装格式，支持自动更新、干净卸载 |
-| macOS | **DMG** | 拖拽安装的磁盘映像 |
-| Linux | **AppImage** | 免安装、便携的单文件应用 |
+| 平台 | 架构 | 格式 | 说明 |
+| ---- | ---- | ---- | ---- |
+| Windows | **x64** | **MSIX** | 现代 Windows 安装格式，支持自动更新、干净卸载 |
+| macOS | **arm64** | **DMG** | 拖拽安装的磁盘映像（Apple Silicon） |
+| Linux | **x64 + arm64** | **AppImage** | 免安装、便携的单文件应用 |
 
-> Linux 刻意只保留 AppImage，不做 DEB/RPM（2026-08-09 决策）。
+安装包文件名带架构后缀，例如：
+`flutter_civitai_box-1.0.0+1-windows-x64.msix`、
+`flutter_civitai_box-1.0.0+1-macos-arm64.dmg`、
+`flutter_civitai_box-1.0.0+1-linux-arm64.AppImage`。
+
+> 决策（2026-08-09）：Windows 只做 x64、macOS 只做 arm64、Linux 做 x64+arm64；
+> Linux 只保留 AppImage，不做 DEB/RPM。
 
 ## 工具链
 
@@ -78,17 +84,26 @@ git push origin v1.1.0
 ```mermaid
 flowchart LR
     A[触发] --> B[prepare 解析版本 + 确保 tag + 一致性校验]
-    B --> C1[Windows 打 MSIX]
-    B --> C2[macOS 打 DMG]
-    B --> C3[Linux 打 AppImage]
-    C1 --> D[下载全部安装包]
+    B --> C1[Windows x64 打 MSIX]
+    B --> C2[macOS arm64 打 DMG]
+    B --> C3[Linux x64 打 AppImage]
+    B --> C4[Linux arm64 打 AppImage]
+    C1 --> D[汇总安装包并加架构后缀]
     C2 --> D
     C3 --> D
+    C4 --> D
     D --> E[创建 draft release<br/>自动 release notes + 覆盖重传]
     E --> F[人工确认后 Publish]
 ```
 
 - **打包**：`fastforge package`（Windows MSIX / macOS DMG / Linux AppImage）
+- **架构**：
+  - Windows：`windows-latest`（x64），MSIX 配置显式 `architecture: x64`
+  - macOS：`macos-14`（arm64 runner）
+  - Linux：`ubuntu-latest`（x64）+ `ubuntu-24.04-arm`（arm64 runner）；
+    ARM 版需额外下载 `appimagetool-aarch64` 并给 fastforge 的 AppImage maker
+    打 `ARCH=aarch64` 补丁（fastforge 硬编码 x86_64）
+- **文件名**：打包后加一个步骤，在扩展名前插入架构后缀（`-x64` / `-arm64`）
 - **上传**：`softprops/action-gh-release`，`draft: true` + `generate_release_notes: true`
   - `overwrite: true`（重跑会覆盖同名安装包，不会报错）
 - **权限**：工作流自动注入 `GITHUB_TOKEN`，无需额外配置

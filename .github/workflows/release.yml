@@ -1,9 +1,10 @@
 # GitHub Actions 发布工作流
 #
 # 使用 Fast Forge 打包三大桌面平台的安装包并发布到 GitHub Releases：
-#   - Windows → MSIX
-#   - macOS   → DMG
-#   - Linux   → AppImage
+#   - Windows x64  → MSIX
+#   - macOS arm64 → DMG
+#   - Linux x64 + arm64 → AppImage
+# 安装包文件名带处理器架构后缀（如 -windows-x64.msix / -linux-arm64.AppImage）
 #
 # 版本管理（单一版本源 = pubspec.yaml）：
 #   - pubspec.yaml 的 version 是唯一版本来源
@@ -103,21 +104,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: windows
+          - name: windows-x64
             os: windows-latest
             platform: windows
             targets: msix
             ext: msix
-          - name: macos
-            os: macos-latest
+            arch: x64
+          - name: macos-arm64
+            os: macos-14
             platform: macos
             targets: dmg
             ext: dmg
-          - name: linux
+            arch: arm64
+          - name: linux-x64
             os: ubuntu-latest
             platform: linux
             targets: appimage
             ext: AppImage
+            arch: x64
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            platform: linux
+            targets: appimage
+            ext: AppImage
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -153,10 +163,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev clang cmake pkg-config libsecret-1-dev libjsoncpp-dev libstdc++-12-dev libasound2-dev libmpv-dev
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            APPIMG_URL=https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+          else
+            APPIMG_URL=https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          fi
+          wget -q "$APPIMG_URL" -O /tmp/appimagetool
           chmod +x /tmp/appimagetool
           sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
           echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+          # fastforge 的 AppImage maker 硬编码 ARCH=x86_64，ARM 构建需改为 aarch64
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            MAKER=$(find "$PUB_CACHE/hosted/pub.dev" -path '*flutter_app_packager*/lib/src/makers/appimage/app_package_maker_appimage.dart' | head -1)
+            sed -i "s/'ARCH': 'x86_64'/'ARCH': 'aarch64'/" "$MAKER"
+            if ! grep -q "'ARCH': 'aarch64'" "$MAKER"; then
+              echo "::error::Failed to patch ARCH in appimage maker"
+              exit 1
+            fi
+            echo "✅ Patched appimage ARCH -> aarch64"
+          fi
 
       # macOS DMG 需要 appdmg（Node 工具）
       - name: Install macOS packaging tools
@@ -171,6 +196,18 @@ jobs:
           FF="$PUB_CACHE/bin/fastforge"
           if [ -f "$FF.bat" ]; then FF="$FF.bat"; fi
           "$FF" package --platform ${{ matrix.platform }} --targets ${{ matrix.targets }}
+
+      # 在文件名中标注处理器架构，例如 ...-windows-x64.msix / ...-linux-arm64.AppImage
+      - name: Add architecture to artifact name
+        shell: bash
+        run: |
+          for f in dist/*/*.${{ matrix.ext }}; do
+            dir="$(dirname "$f")"
+            name="$(basename "$f")"
+            new="$(echo "$name" | sed -E "s/\.${{ matrix.ext }}$/-${{ matrix.arch }}.${{ matrix.ext }}/")"
+            mv "$f" "$dir/$new"
+            echo "✅ $name → $new"
+          done
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
