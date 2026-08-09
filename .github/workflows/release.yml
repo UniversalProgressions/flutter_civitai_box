@@ -3,8 +3,8 @@
 # 使用 Fast Forge 打包三大桌面平台的安装包并发布到 GitHub Releases：
 #   - Windows x64  → MSIX
 #   - macOS arm64 → DMG
-#   - Linux x64 + arm64 → AppImage
-# 安装包文件名带处理器架构后缀（如 -windows-x64.msix / -linux-arm64.AppImage）
+#   - Linux x64   → AppImage
+# 安装包文件名带处理器架构后缀（如 -windows-x64.msix / -macos-arm64.dmg / -linux-x64.AppImage）
 #
 # 版本管理（单一版本源 = pubspec.yaml）：
 #   - pubspec.yaml 的 version 是唯一版本来源
@@ -110,36 +110,25 @@ jobs:
             targets: msix
             ext: msix
             arch: x64
-            flutter_version: 3.44.8
           - name: macos-arm64
             os: macos-14
             platform: macos
             targets: dmg
             ext: dmg
             arch: arm64
-            flutter_version: 3.44.8
           - name: linux-x64
             os: ubuntu-latest
             platform: linux
             targets: appimage
             ext: AppImage
             arch: x64
-            flutter_version: 3.44.8
-          - name: linux-arm64
-            os: ubuntu-24.04-arm
-            platform: linux
-            targets: appimage
-            ext: AppImage
-            arch: arm64
-            # 固定版 3.44.8 无 linux-arm64 构建，用最新 stable
-            flutter_version: ""
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ matrix.flutter_version }}
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
@@ -168,25 +157,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev clang cmake pkg-config libsecret-1-dev libjsoncpp-dev libstdc++-12-dev libasound2-dev libmpv-dev
-          if [ "${{ matrix.arch }}" == "arm64" ]; then
-            APPIMG_URL=https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
-          else
-            APPIMG_URL=https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          fi
-          wget -q "$APPIMG_URL" -O /tmp/appimagetool
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
           chmod +x /tmp/appimagetool
           sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
           echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
-          # fastforge 的 AppImage maker 硬编码 ARCH=x86_64，ARM 构建需改为 aarch64
-          if [ "${{ matrix.arch }}" == "arm64" ]; then
-            MAKER=$(find "$PUB_CACHE/hosted/pub.dev" -path '*flutter_app_packager*/lib/src/makers/appimage/app_package_maker_appimage.dart' | head -1)
-            sed -i "s/'ARCH': 'x86_64'/'ARCH': 'aarch64'/" "$MAKER"
-            if ! grep -q "'ARCH': 'aarch64'" "$MAKER"; then
-              echo "::error::Failed to patch ARCH in appimage maker"
-              exit 1
-            fi
-            echo "✅ Patched appimage ARCH -> aarch64"
-          fi
 
       # macOS DMG 需要 appdmg（Node 工具）
       - name: Install macOS packaging tools

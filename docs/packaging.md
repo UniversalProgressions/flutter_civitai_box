@@ -9,15 +9,16 @@
 | ---- | ---- | ---- | ---- |
 | Windows | **x64** | **MSIX** | 现代 Windows 安装格式，支持自动更新、干净卸载 |
 | macOS | **arm64** | **DMG** | 拖拽安装的磁盘映像（Apple Silicon） |
-| Linux | **x64 + arm64** | **AppImage** | 免安装、便携的单文件应用 |
+| Linux | **x64** | **AppImage** | 免安装、便携的单文件应用 |
 
 安装包文件名带架构后缀，例如：
 `flutter_civitai_box-1.0.0+1-windows-x64.msix`、
 `flutter_civitai_box-1.0.0+1-macos-arm64.dmg`、
-`flutter_civitai_box-1.0.0+1-linux-arm64.AppImage`。
+`flutter_civitai_box-1.0.0+1-linux-x64.AppImage`。
 
-> 决策（2026-08-09）：Windows 只做 x64、macOS 只做 arm64、Linux 做 x64+arm64；
-> Linux 只保留 AppImage，不做 DEB/RPM。
+> 决策（2026-08-09）：Windows 只做 x64、macOS 只做 arm64、Linux 只做 x64；
+> Linux 只保留 AppImage，不做 DEB/RPM。**Linux arm64 曾尝试后放弃**
+> （Flutter 官方对 Linux arm64 支持有限，`flutter-action` 对固定版 3.44.8 无 arm64 构建）。
 
 ## 工具链
 

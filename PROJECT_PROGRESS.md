@@ -28,14 +28,23 @@
 
 用 Fast Forge 0.6.12 打通三大桌面平台的安装包打包与 GitHub Releases 发布：
 
-| 平台 | 格式 | 配置 | 状态 |
-| ------ | ------ | ------ | ------ |
-| Windows | MSIX | `windows/packaging/msix/make_config.yaml` | ✅ 36.2 MB |
-| macOS | DMG | `macos/packaging/dmg/make_config.yaml` | ✅ 38.4 MB |
-| Linux | AppImage | `linux/packaging/appimage/make_config.yaml` | ✅ 114 MB |
+| 平台 | 架构 | 格式 | 配置 | 状态 |
+| ------ | ------ | ------ | ------ | ------ |
+| Windows | x64 | MSIX | `windows/packaging/msix/make_config.yaml` | ✅ 36.2 MB |
+| macOS | arm64 | DMG | `macos/packaging/dmg/make_config.yaml` | ✅ 38.4 MB |
+| Linux | x64 | AppImage | `linux/packaging/appimage/make_config.yaml` | ✅ 114 MB |
+
+- **架构决策（2026-08-09）**：
+  - Windows 只支持 **x64**；macOS 只支持 **arm64**；Linux 只支持 **x64**。
+  - 安装包文件名带**处理器架构后缀**（如 `-windows-x64.msix` / `-macos-arm64.dmg` / `-linux-x64.AppImage`），
+    由工作流里的 `Add architecture to artifact name` 步骤重命名。
+  - **linux-arm64 尝试后放弃**：Flutter 官方对 Linux arm64 支持有限
+    （`subosito/flutter-action` 对固定版 3.44.8 无 arm64 构建，且 AppImage/媒体库链路不成熟），
+    2026-08-09 决策不再支持。
 
 - **结果**：GitHub Actions Run 4 三平台全部通过，**draft release `v1.0.0`** 已生成
   （含 3 个安装包 + 源码 + 自动 changelog），等人工确认后 Publish。
+  后续架构扩展（Run 5/6）验证了 Linux arm64 构建可行性后按决策移除。
 
 - **决策**：Linux 只保留 AppImage，不做 DEB/RPM。
 - **发布工作流**：`.github/workflows/release.yml`（tag `v*` 推送或手动触发 → 矩阵构建 → `fastforge publish` 上传到 GitHub Releases）。

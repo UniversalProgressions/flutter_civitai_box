@@ -308,6 +308,21 @@ Git Bash 按裸名 `fastforge` 只找 `.exe`/可执行文件，**不会解析 `.
 > 这套坑全部落地后（2026-08-09），三个平台 CI 构建首次全部通过：
 > Windows MSIX 36MB / macOS DMG 38MB / Linux AppImage 114MB。
 
+### 坑 17：Linux arm64 支持有限 → 放弃（决策）
+
+**现象**：尝试加 `linux-arm64`（`ubuntu-24.04-arm` runner）时，`subosito/flutter-action`
+报 `Unable to determine Flutter version for channel: stable version: 3.44.8 architecture: arm64`
+——固定版 3.44.8 **没有 Linux arm64 的构建**。
+
+**根因**：Flutter 官方对 **Linux arm64 支持有限**（Linux 桌面 arm64 构建不是一等公民），
+且 AppImage/媒体库（mpv 等）在 arm64 上的链路不成熟。
+
+**决策**：**放弃 Linux arm64**（2026-08-09）。最终架构矩阵：
+Windows **x64** / macOS **arm64** / Linux **x64**。
+
+> 补充：安装包文件名统一带架构后缀（工作流 `Add architecture to artifact name` 步骤重命名），
+> 如 `-windows-x64.msix` / `-macos-arm64.dmg` / `-linux-x64.AppImage`。
+
 ---
 
 ## 5. 验证与排查速查
