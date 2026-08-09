@@ -132,14 +132,10 @@ jobs:
         shell: bash
         run: |
           dart pub global activate fastforge
-          # 把 pub cache bin 加入 PATH（Windows 与 Linux/macOS 路径不同）
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            PUB_BIN="$LOCALAPPDATA/Pub/Cache/bin"
-          else
-            PUB_BIN="$HOME/.pub-cache/bin"
-          fi
-          echo "$PUB_BIN" >> "$GITHUB_PATH"
-          echo "PUB_BIN=$PUB_BIN"
+          # flutter-action 已设置 PUB_CACHE 环境变量（各平台路径不同），
+          # dart pub global 安装的二进制就在 $PUB_CACHE/bin
+          echo "$PUB_CACHE/bin" >> "$GITHUB_PATH"
+          echo "PUB_BIN=$PUB_CACHE/bin"
 
       # 将发布版本注入 MSIX 配置（格式 a.b.c.d，第四段固定为 1）
       - name: Inject MSIX version
@@ -151,12 +147,12 @@ jobs:
           grep '^msix_version:' windows/packaging/msix/make_config.yaml
 
       # Linux 构建依赖 + appimagetool（无 FUSE 环境用 extract-and-run）
-      # libasound2-dev 是 volume_controller（media_kit_video 依赖）需要的 ALSA 开发库
+      # libasound2-dev = volume_controller 的 ALSA；libmpv-dev = media_kit_video 的 mpv
       - name: Install Linux build tools
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev clang cmake pkg-config libsecret-1-dev libjsoncpp-dev libstdc++-12-dev libasound2-dev
+          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev clang cmake pkg-config libsecret-1-dev libjsoncpp-dev libstdc++-12-dev libasound2-dev libmpv-dev
           wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
           chmod +x /tmp/appimagetool
           sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
