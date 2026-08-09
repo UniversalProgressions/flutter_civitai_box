@@ -1,0 +1,27 @@
+# DMG 打包配置（macOS）
+# 由 fastforge package --platform macos --targets dmg 读取
+# 底层使用 appdmg（https://github.com/nicolo-ribaudo/appdmg）
+# contents[].path 相对于打包临时目录，.app 会自动复制进去
+
+# DMG 卷宗标题
+title: CivitAI Box
+
+# 安装窗口大小与位置
+window:
+  position:
+    x: 100
+    y: 100
+  size:
+    width: 640
+    height: 480
+
+# 卷宗内容：左侧是应用本体，右侧是 /Applications 快捷方式
+contents:
+  - x: 130
+    y: 220
+    type: file
+    path: flutter_civitai_box.app
+  - x: 410
+    y: 220
+    type: link
+    path: /Applications

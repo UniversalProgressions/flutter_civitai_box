@@ -8,7 +8,7 @@
 PRODUCT_NAME = flutter_civitai_box
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.flutterCivitaiBox
+PRODUCT_BUNDLE_IDENTIFIER = com.universalprogressions.civitaibox
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 UniversalProgressions. All rights reserved.

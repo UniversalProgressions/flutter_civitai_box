@@ -1,0 +1,28 @@
+# AppImage 打包配置（Linux）
+# 由 fastforge package --platform linux --targets appimage 读取
+# 底层使用 appimagetool
+
+# 应用显示名称
+display_name: CivitAI Box
+
+# 应用图标（PNG 文件路径，相对项目根目录）
+# 当前使用 web 图标占位，发布前请替换为正式品牌图标
+icon: web/icons/Icon-512.png
+
+# 桌面条目通用名称
+generic_name: CivitAI Model Manager
+
+# 搜索关键词
+keywords:
+  - CivitAI
+  - AI
+  - Model
+  - Stable Diffusion
+
+# 应用分类（freedesktop 规范）
+categories:
+  - Graphics
+  - Utility
+
+# 允许添加到开机启动
+startup_notify: true

@@ -33,6 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Fast Forge packaging output
+/dist/
+
 # Symbolication related
 app.*.symbols
 

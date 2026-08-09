@@ -1,0 +1,32 @@
+# MSIX 打包配置（Windows）
+# 由 fastforge package --platform windows --targets msix 读取
+# 参考 msix 包文档：https://pub.dev/packages/msix
+
+# 应用在 Windows 中显示的名称
+display_name: CivitAI Box
+
+# 发布者显示名（显示在系统设置 -> 应用 中）
+publisher_display_name: UniversalProgressions
+
+# 应用的唯一标识符（3-50 字符，仅允许字母数字、点、短横线）
+# 必须全局唯一，不能与其他已安装应用冲突
+identity_name: UniversalProgressions.CivitAIBox
+
+# MSIX 版本，格式必须为 a.b.c.d（四段）
+# 与 pubspec.yaml 中 version 的 1.0.0+1 对应（build number 作为第四段）
+msix_version: 1.0.0.1
+
+# 应用图标（建议至少 400x400 的 PNG，相对项目根目录）
+# 当前使用 web 图标占位，发布前请替换为正式品牌图标
+logo_path: web/icons/Icon-512.png
+
+# 声明的语言资源（逗号分隔的字符串）
+languages: en-US,zh-CN
+
+# 应用声明的能力（该应用需联网访问 CivitAI API 并下载模型）
+capabilities: internetClient,internetClientServer,privateNetworkClientServer
+
+# 不安装证书到系统证书库（避免交互式提示，CI 非交互环境必需）。
+# 仍会用内置测试证书对 MSIX 签名，可正常安装；正式发布建议换成真实代码签名证书。
+# 注意：fastforge 的 MakeMsixConfig 字段都是字符串类型，布尔值需加引号。
+install_certificate: "false"

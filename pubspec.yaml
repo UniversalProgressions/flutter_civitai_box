@@ -1,8 +1,8 @@
 name: flutter_civitai_box
-description: "A new Flutter project."
+description: "CivitAI Box — 浏览、管理和下载 CivitAI 的 AI 模型。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
 # The following defines the version and build number for your application.
 # A version number is three numbers separated by dots, like 1.2.43
@@ -43,6 +43,8 @@ dependencies:
   media_kit: ^1.1.11
   media_kit_video: ^1.2.5
   media_kit_libs_windows_video: ^1.0.10
+  media_kit_libs_macos_video: ^1.1.4
+  media_kit_libs_linux: ^1.2.1
   validart: ^3.0.0
   talker: ^5.1.17
   dio: ^5.9.2
@@ -80,7 +82,6 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
-
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

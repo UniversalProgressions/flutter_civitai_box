@@ -1,7 +1,7 @@
 # 项目进展记录（Project Progress）
 
 > 记录 CivitAI Box 的功能进展、剩余工作和关键决策。
-> 最后更新：2026-08-08
+> 最后更新：2026-08-09
 
 ---
 
@@ -17,11 +17,42 @@
 | 数据库 | `lib/db/` | SQLite（sqflite），CivitAI 镜像 + 用户自定义表 |
 | 下载系统 | `lib/services/download/` | 下载队列 + Magazine 下载系统 |
 | UI | `lib/ui/` | 本地模型库、下载、统计、设置 |
-| 文档 | `docs/` | 架构、数据库、下载、UI 设计文档 |
+| 打包与发布 | `docs/packaging.md` + `.github/workflows/` | Fast Forge 打包 MSIX/DMG/AppImage + GitHub Releases |
+| 文档 | `docs/` | 架构、数据库、下载、UI、打包设计文档 |
 
 ---
 
 ## 最近里程碑
+
+### ✅ 2026-08-09 — Fast Forge 打包 + GitHub Releases 发布（本机验证 MSIX ✅）
+
+用 Fast Forge 0.6.12 打通三大桌面平台的安装包打包与 GitHub Releases 发布：
+
+| 平台 | 格式 | 配置 | 状态 |
+| ------ | ------ | ------ | ------ |
+| Windows | MSIX | `windows/packaging/msix/make_config.yaml` | ✅ 本机验证（36MB，已签名，清单正确） |
+| macOS | DMG | `macos/packaging/dmg/make_config.yaml` | ⏳ CI 待验证 |
+| Linux | AppImage | `linux/packaging/appimage/make_config.yaml` | ⏳ CI 待验证 |
+
+- **决策**：Linux 只保留 AppImage，不做 DEB/RPM。
+- **发布工作流**：`.github/workflows/release.yml`（tag `v*` 推送或手动触发 → 矩阵构建 → `fastforge publish` 上传到 GitHub Releases）。
+- **版本管理与发布策略（2026-08-09 增补）**：
+  - **单一版本源**：`pubspec.yaml` 的 `version` 是唯一版本来源；新增 `prepare` job 自动从
+    pubspec 读版本 → 创建 tag `v<version>`，并校验 pubspec 与 tag 一致。
+  - **手动触发免输入**：workflow_dispatch 无需填版本号，改 pubspec → 提交 → 点 Run workflow 即可。
+  - **draft 草稿发布**：改用 `softprops/action-gh-release` 上传（不再用 `fastforge publish`），
+    创建 draft release + 自动 release notes + `overwrite: true`（重跑覆盖同名资产）。
+    人工确认后手动 Publish release，避免"手滑公开"。
+  - 详细流程见 `docs/packaging.md`。
+- **关键发现/坑**：
+  - fastforge 0.6.12 的 `MakeMsixConfig` 所有字段都是字符串类型——YAML 里布尔值要写成 `"false"`（否则 `type 'bool' is not a subtype of type 'String?'`）。
+  - `install_certificate: "false"` 必须设置——否则 msix 包会弹"是否安装证书"的交互提示，CI/脚本会卡死；设为 false 后仍会用内置 `Msix Testing` 测试证书签名。
+  - `languages` 要写成逗号分隔字符串（`en-US,zh-CN`），不能是 YAML 列表。
+  - `add_execution_alias` 是无效键（msix 包没有对应 CLI 参数），会导致 `FormatException`，已移除。
+  - `media_kit` 跨平台：`pubspec.yaml` 补了 `media_kit_libs_macos_video` + `media_kit_libs_linux`。
+  - macOS bundle ID 已从 `com.example.*` 改为 `com.universalprogressions.civitaibox`。
+- **待办**：正式发布前替换品牌图标（当前用 Flutter 默认图标占位）、配置真实签名证书。
+- **详细文档**：`docs/packaging.md`（操作手册）、`docs/packaging-guide.md`（完整指南 + 13 个踩坑记录）。
 
 ### ✅ 2026-06-07 — Magazine 下载系统（Load → Review → Fire）— 提交 `ac77bc0`
 

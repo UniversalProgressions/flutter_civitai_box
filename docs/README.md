@@ -26,7 +26,7 @@
 ```
 
 | Layer | Directory | Description |
-|-------|-----------|-------------|
+| ------- | ----------- | ------------- |
 | **API Client** | `lib/civitai_api/` | FP-style CivitAI REST client — dartz `Either`, Freezed models, closure DI |
 | **Database** | `lib/db/` | SQLite via sqflite — DAO + Repository pattern, CivitAI mirror + user tables |
 | **Download** | `lib/services/download/` | Background download queue — batch per ModelVersion, survives app restart |
@@ -61,6 +61,13 @@
 | Document | Description |
 |----------|-------------|
 | [UI Theming & Animation](ui-theming.md) | NSFW-bound color system (3 palettes), animation strategy, motion tokens |
+
+### Packaging & Release
+
+| Document | Description |
+|----------|-------------|
+| [Packaging & Release 手册](packaging.md) | 操作手册：Fast Forge 打包 MSIX/DMG/AppImage + 发布到 GitHub Releases |
+| [打包完整指南与踩坑记录](packaging-guide.md) | 深度记录：工具链内部结构、完整流程、13 个踩坑及解决方案 |
 
 ---
 

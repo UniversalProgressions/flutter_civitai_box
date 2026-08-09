@@ -1,0 +1,200 @@
+# GitHub Actions 发布工作流
+#
+# 使用 Fast Forge 打包三大桌面平台的安装包并发布到 GitHub Releases：
+#   - Windows → MSIX
+#   - macOS   → DMG
+#   - Linux   → AppImage
+#
+# 版本管理（单一版本源 = pubspec.yaml）：
+#   - pubspec.yaml 的 version 是唯一版本来源
+#   - 手动触发时自动读取 pubspec 版本并创建 tag v<version>
+#   - tag 触发时直接使用 tag 名作为版本
+#   - 构建前校验 pubspec 版本与 tag 一致
+#
+# 发布流程：
+#   1. prepare：解析版本 + 确保 tag 存在 + 版本一致性校验
+#   2. build：三个构建任务在各自原生平台 runner 上并行打包（Windows 只能在
+#      Windows 上构建，macOS 只能在 macOS 上，Linux 只能在 Linux 上）
+#   3. publish：用 softprops/action-gh-release 汇总所有安装包，创建
+#      draft（草稿）release——人工确认后再公开
+#
+# 使用方式：
+#   A. 手动触发（推荐）：修改 pubspec.yaml 的 version → 提交推送 →
+#      到 Actions 运行本工作流（无需填任何输入）→ 自动打 tag、构建、
+#      生成 draft release → 去 Release 页确认后点 "Publish release"
+#   B. 推送 tag：git tag v1.0.0 && git push origin v1.0.0
+
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  # 手动触发：自动从 pubspec.yaml 读取版本号并创建 tag（无需填写任何输入）
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.8"
+
+jobs:
+  # 解析发布版本并确保 tag 存在（单一版本源 = pubspec.yaml）
+  prepare:
+    name: Resolve version & ensure tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version & create tag
+        id: resolve
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" == "tag" ]; then
+            # tag 触发：版本直接取 tag 名（去掉 v 前缀）
+            version="${GITHUB_REF_NAME#v}"
+            tag="${GITHUB_REF_NAME}"
+          else
+            # 手动触发：从 pubspec.yaml 读取语义版本（去掉 +build 号）
+            version=$(grep -m1 '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([^+#]+).*/\1/')
+            if [ -z "$version" ]; then
+              echo "::error::无法从 pubspec.yaml 解析版本号"
+              exit 1
+            fi
+            tag="v${version}"
+            if git ls-remote --tags origin "$tag" | grep -q "refs/tags/$tag"; then
+              echo "::warning::Tag $tag 已存在，将复用该 release（如需发新版本请先修改 pubspec.yaml 的 version）"
+            else
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git tag "$tag"
+              git push origin "$tag"
+              echo "✅ 已自动创建 tag $tag"
+            fi
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          pubspec_ver=$(grep -m1 '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*([^+#]+).*/\1/')
+          if [ "$pubspec_ver" != "${{ steps.resolve.outputs.version }}" ]; then
+            echo "::error::pubspec.yaml 版本 ($pubspec_ver) 与 tag 版本 (${{ steps.resolve.outputs.version }}) 不一致，请先同步"
+            exit 1
+          fi
+          echo "✅ 版本一致性校验通过: $pubspec_ver"
+
+  build:
+    name: Package ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            platform: windows
+            targets: msix
+            ext: msix
+          - name: macos
+            os: macos-latest
+            platform: macos
+            targets: dmg
+            ext: dmg
+          - name: linux
+            os: ubuntu-latest
+            platform: linux
+            targets: appimage
+            ext: AppImage
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Fast Forge
+        shell: bash
+        run: |
+          dart pub global activate fastforge
+          echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      # 将发布版本注入 MSIX 配置（格式 a.b.c.d，第四段固定为 1）
+      - name: Inject MSIX version
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          ver="${{ needs.prepare.outputs.version }}"
+          sed -i "s/^msix_version: .*/msix_version: ${ver}.1/" windows/packaging/msix/make_config.yaml
+          grep '^msix_version:' windows/packaging/msix/make_config.yaml
+
+      # Linux 构建依赖 + appimagetool（无 FUSE 环境用 extract-and-run）
+      - name: Install Linux build tools
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev liblzma-dev clang cmake pkg-config
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+
+      # macOS DMG 需要 appdmg（Node 工具）
+      - name: Install macOS packaging tools
+        if: matrix.platform == 'macos'
+        run: npm install -g appdmg
+
+      - name: Package with Fast Forge
+        shell: bash
+        run: fastforge package --platform ${{ matrix.platform }} --targets ${{ matrix.targets }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: dist/**/*.${{ matrix.ext }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish to GitHub Releases
+    needs: [build, prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # 用 softprops/action-gh-release 上传所有安装包到 GitHub Release：
+      #   - draft: 创建草稿，人工确认后再发布，避免"手滑公开"
+      #   - generate_release_notes: 自动生成发布说明
+      #   - overwrite: 重跑时覆盖同名安装包（解决 fastforge publish 的重复资产报错）
+      - name: Upload to GitHub Release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.tag }}
+          files: |
+            artifacts/**/*.msix
+            artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+          draft: true
+          generate_release_notes: true
+          overwrite: true
+          fail_on_unmatched_files: false
