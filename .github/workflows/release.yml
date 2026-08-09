@@ -206,6 +206,23 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      # 删除 release 中旧的安装包资产（如无架构后缀的 -windows.msix / -macos.dmg / -linux.AppImage），
+      # 避免与本次带架构后缀的新文件重复。重新打包时保证 release 里只有最新一套安装包。
+      - name: Remove stale installer assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ needs.prepare.outputs.tag }}"
+          repo="${{ github.repository }}"
+          # 列出 release 中所有安装包类资产（msix/dmg/AppImage），逐个删除
+          gh release view "$tag" --repo "$repo" --json assets -q '.assets[].name' 2>/dev/null \
+            | grep -E '\.(msix|dmg|AppImage)$' \
+            | while read -r name; do
+                echo "🗑 Removing stale asset: $name"
+                gh release delete-asset "$tag" --repo "$repo" --yes "$name"
+              done
+
       # 用 softprops/action-gh-release 上传所有安装包到 GitHub Release：
       #   - draft: 创建草稿，人工确认后再发布，避免"手滑公开"
       #   - generate_release_notes: 自动生成发布说明
