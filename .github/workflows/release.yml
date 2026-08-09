@@ -110,31 +110,36 @@ jobs:
             targets: msix
             ext: msix
             arch: x64
+            flutter_version: 3.44.8
           - name: macos-arm64
             os: macos-14
             platform: macos
             targets: dmg
             ext: dmg
             arch: arm64
+            flutter_version: 3.44.8
           - name: linux-x64
             os: ubuntu-latest
             platform: linux
             targets: appimage
             ext: AppImage
             arch: x64
+            flutter_version: 3.44.8
           - name: linux-arm64
             os: ubuntu-24.04-arm
             platform: linux
             targets: appimage
             ext: AppImage
             arch: arm64
+            # 固定版 3.44.8 无 linux-arm64 构建，用最新 stable
+            flutter_version: ""
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          flutter-version: ${{ matrix.flutter_version }}
           channel: stable
           cache: true
 
