@@ -24,15 +24,18 @@
 
 ## 最近里程碑
 
-### ✅ 2026-08-09 — Fast Forge 打包 + GitHub Releases 发布（本机验证 MSIX ✅）
+### ✅ 2026-08-09 — Fast Forge 打包 + GitHub Releases 发布（三平台 CI 全部跑通 🎉）
 
 用 Fast Forge 0.6.12 打通三大桌面平台的安装包打包与 GitHub Releases 发布：
 
 | 平台 | 格式 | 配置 | 状态 |
 | ------ | ------ | ------ | ------ |
-| Windows | MSIX | `windows/packaging/msix/make_config.yaml` | ✅ 本机验证（36MB，已签名，清单正确） |
-| macOS | DMG | `macos/packaging/dmg/make_config.yaml` | ⏳ CI 待验证 |
-| Linux | AppImage | `linux/packaging/appimage/make_config.yaml` | ⏳ CI 待验证 |
+| Windows | MSIX | `windows/packaging/msix/make_config.yaml` | ✅ 36.2 MB |
+| macOS | DMG | `macos/packaging/dmg/make_config.yaml` | ✅ 38.4 MB |
+| Linux | AppImage | `linux/packaging/appimage/make_config.yaml` | ✅ 114 MB |
+
+- **结果**：GitHub Actions Run 4 三平台全部通过，**draft release `v1.0.0`** 已生成
+  （含 3 个安装包 + 源码 + 自动 changelog），等人工确认后 Publish。
 
 - **决策**：Linux 只保留 AppImage，不做 DEB/RPM。
 - **发布工作流**：`.github/workflows/release.yml`（tag `v*` 推送或手动触发 → 矩阵构建 → `fastforge publish` 上传到 GitHub Releases）。
@@ -51,8 +54,14 @@
   - `add_execution_alias` 是无效键（msix 包没有对应 CLI 参数），会导致 `FormatException`，已移除。
   - `media_kit` 跨平台：`pubspec.yaml` 补了 `media_kit_libs_macos_video` + `media_kit_libs_linux`。
   - macOS bundle ID 已从 `com.example.*` 改为 `com.universalprogressions.civitaibox`。
+  - **CI 三平台踩坑（已全部修复，Run 4 通过）**：
+    - Linux 缺 ALSA → 装 `libasound2-dev`（volume_controller 需要）。
+    - Linux 缺 mpv → 装 `libmpv-dev`（media_kit_video 需要）。
+    - Windows 上 fastforge 是 `fastforge.bat`，Git Bash 裸名 `fastforge` 不解析 `.bat`
+      （exit 127）→ Package 步骤 Windows 显式调用 `$PUB_CACHE/bin/fastforge.bat`。
+    - fastforge 路径统一用 `$PUB_CACHE/bin`（flutter-action 设置的环境变量）。
 - **待办**：正式发布前替换品牌图标（当前用 Flutter 默认图标占位）、配置真实签名证书。
-- **详细文档**：`docs/packaging.md`（操作手册）、`docs/packaging-guide.md`（完整指南 + 13 个踩坑记录）。
+- **详细文档**：`docs/packaging.md`（操作手册）、`docs/packaging-guide.md`（完整指南 + 16 个踩坑记录）。
 
 ### ✅ 2026-06-07 — Magazine 下载系统（Load → Review → Fire）— 提交 `ac77bc0`
 

@@ -261,6 +261,53 @@ Linux 构建还需 `ninja-build libgtk-3-dev liblzma-dev clang cmake pkg-config`
 **解决**：改为 `com.universalprogressions.civitaibox`。Windows 的 `Runner.rc`
 里 `CompanyName`/`LegalCopyright` 仍是 `com.example` 占位，正式发布前建议一并改。
 
+### 坑 14：Linux 构建报 `Could NOT find ALSA`
+
+**现象**：CI 上 `flutter build linux` 报
+`Could NOT find ALSA (missing: ALSA_LIBRARY ALSA_INCLUDE_DIR)`，崩在
+`volume_controller/linux/CMakeLists.txt` 的 `find_package(ALSA)`。
+
+**根因**：`volume_controller`（`media_kit_video` 的依赖，控制音量）在 Linux 上
+需要 **ALSA** 开发库。macOS/Windows 不需要，所以本地 Windows 验证没暴露。
+
+**解决**：CI 的 Linux 构建步骤安装 `libasound2-dev`。
+
+### 坑 15：Linux 构建报 `PkgConfig::mpv ... target was not found`
+
+**现象**：装完 ALSA 后又报
+`media_kit_video/linux/CMakeLists.txt:53: Target "media_kit_video_plugin" links to: PkgConfig::mpv but the target was not found`。
+
+**根因**：`media_kit_video` 的 Linux 插件通过 pkg-config 链接 **libmpv**。
+
+**解决**：CI 的 Linux 构建步骤再安装 `libmpv-dev`。
+（Linux 完整依赖清单：`ninja-build libgtk-3-dev liblzma-dev clang cmake pkg-config libsecret-1-dev libjsoncpp-dev libstdc++-12-dev libasound2-dev libmpv-dev`）
+
+### 坑 16：Windows 上 fastforge 是 `.bat`，Git Bash 裸名找不到
+
+**现象**：Windows runner 报
+`fastforge: command not found`（exit 127），尽管 `$PUB_CACHE/bin` 已加入 PATH。
+
+**根因**：`dart pub global activate` 在 Windows 上生成 `fastforge.bat`（批处理）。
+Git Bash 按裸名 `fastforge` 只找 `.exe`/可执行文件，**不会解析 `.bat`**；
+而 workflow 的步骤用的是 `shell: bash`。Linux/macOS 上生成的是真实二进制，所以只有 Windows 挂。
+
+**解决**：Package 步骤在 Windows 上显式调用 `.bat` 完整路径：
+
+```yaml
+- name: Package with Fast Forge
+  shell: bash
+  run: |
+    if [ "$RUNNER_OS" == "Windows" ]; then
+      fastforge_bin="$PUB_CACHE/bin/fastforge.bat"
+    else
+      fastforge_bin="$PUB_CACHE/bin/fastforge"
+    fi
+    "$fastforge_bin" package --platform ${{ matrix.platform }} --targets ${{ matrix.targets }}
+```
+
+> 这套坑全部落地后（2026-08-09），三个平台 CI 构建首次全部通过：
+> Windows MSIX 36MB / macOS DMG 38MB / Linux AppImage 114MB。
+
 ---
 
 ## 5. 验证与排查速查
