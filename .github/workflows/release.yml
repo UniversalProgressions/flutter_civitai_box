@@ -165,7 +165,12 @@ jobs:
 
       - name: Package with Fast Forge
         shell: bash
-        run: fastforge package --platform ${{ matrix.platform }} --targets ${{ matrix.targets }}
+        run: |
+          # Windows 上 dart pub global 生成的是 fastforge.bat，Git Bash 不会按裸名
+          # "fastforge" 解析 .bat（只认 .exe），所以显式处理 .bat 后缀并调用完整路径
+          FF="$PUB_CACHE/bin/fastforge"
+          if [ -f "$FF.bat" ]; then FF="$FF.bat"; fi
+          "$FF" package --platform ${{ matrix.platform }} --targets ${{ matrix.targets }}
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
