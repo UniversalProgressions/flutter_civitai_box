@@ -19,7 +19,8 @@ executable_name: flutter_civitai_box.exe
 create_desktop_icon: true
 
 # 安装目录（per-user，免管理员权限；类似 VS Code/Chrome 的安装方式）
-install_dir_name: "{localappdata}\Programs\CivitAI Box"
+# 注意用单引号：双引号会把 \P 当作 YAML 转义字符导致解析失败
+install_dir_name: '{localappdata}\Programs\CivitAI Box'
 
 # 安装向导图标（Inno Setup 需要 .ico 文件，相对项目根目录）
 setup_icon_file: windows/runner/resources/app_icon.ico
