@@ -1,10 +1,10 @@
 # GitHub Actions 发布工作流
 #
 # 使用 Fast Forge 打包三大桌面平台的安装包并发布到 GitHub Releases：
-#   - Windows x64  → MSIX
+#   - Windows x64  → Inno Setup 安装器 (exe) + portable zip
 #   - macOS arm64 → DMG
 #   - Linux x64   → AppImage
-# 安装包文件名带处理器架构后缀（如 -windows-x64.msix / -macos-arm64.dmg / -linux-x64.AppImage）
+# 安装包文件名带处理器架构后缀（如 -windows-setup-x64.exe / -windows-x64.zip / -macos-arm64.dmg / -linux-x64.AppImage）
 #
 # 版本管理（单一版本源 = pubspec.yaml）：
 #   - pubspec.yaml 的 version 是唯一版本来源
@@ -104,11 +104,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows 同时产出：MSIX（正式安装包）+ zip（portable 免安装版）
+          # Windows 同时产出：Inno Setup 安装器 (exe) + zip（portable 免安装版）
           - name: windows-x64
             os: windows-latest
             platform: windows
-            targets: msix,zip
+            targets: exe,zip
             arch: x64
           - name: macos-arm64
             os: macos-14
@@ -159,6 +159,13 @@ jobs:
           chmod +x /tmp/appimagetool
           sudo mv /tmp/appimagetool /usr/local/bin/appimagetool
           echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+
+      # Windows 安装器需要 Inno Setup 6（fastforge 的 exe maker 用 ISCC.exe 编译）
+      - name: Install Inno Setup (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          choco install innosetup -y --no-progress
+          echo "INNO_SETUP_PATH=C:\Program Files (x86)\Inno Setup 6" >> "$GITHUB_ENV"
 
       # macOS DMG 需要 appdmg（Node 工具）
       - name: Install macOS packaging tools
@@ -222,7 +229,7 @@ jobs:
           repo="${{ github.repository }}"
           # 列出 release 中所有安装包类资产（msix/dmg/AppImage），逐个删除
           gh release view "$tag" --repo "$repo" --json assets -q '.assets[].name' 2>/dev/null \
-            | grep -E '\.(msix|dmg|AppImage|zip)$' \
+            | grep -E '\.(exe|dmg|AppImage|zip)$' \
             | while read -r name; do
                 echo "🗑 Removing stale asset: $name"
                 gh release delete-asset "$tag" --repo "$repo" --yes "$name"
@@ -238,7 +245,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: ${{ needs.prepare.outputs.tag }}
           files: |
-            artifacts/**/*.msix
+            artifacts/**/*.exe
             artifacts/**/*.dmg
             artifacts/**/*.AppImage
             artifacts/**/*.zip

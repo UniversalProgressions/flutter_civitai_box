@@ -1,0 +1,37 @@
+# Inno Setup 安装器配置（Windows，替代 MSIX）
+# 由 fastforge package --platform windows --targets exe 读取
+# 需要 Inno Setup 6（CI 上通过 choco 安装，设 INNO_SETUP_PATH）
+
+# 应用的唯一 ID（Inno Setup GUID 格式，固定不变，用于卸载/升级识别）
+app_id: "{90bd9d36-c15c-4712-9ba6-a754b1f8ada8}"
+
+# 安装时显示的名称
+display_name: CivitAI Box
+
+# 发布者信息
+publisher_name: UniversalProgressions
+publisher_url: https://github.com/UniversalProgressions
+
+# 主程序名
+executable_name: flutter_civitai_box.exe
+
+# 创建桌面快捷方式
+create_desktop_icon: true
+
+# 安装目录（per-user，免管理员权限；类似 VS Code/Chrome 的安装方式）
+install_dir_name: "{localappdata}\Programs\CivitAI Box"
+
+# 安装向导图标（Inno Setup 需要 .ico 文件，相对项目根目录）
+setup_icon_file: windows/runner/resources/app_icon.ico
+
+# 安装权限：lowest = 仅当前用户安装，不弹 UAC
+privileges_required: lowest
+
+# 界面语言（zh = 简体中文）
+locales:
+  - zh
+  - en
+
+# 只支持 x64
+architectures_allowed: x64compatible
+architectures_install_in_64bit_mode: x64compatible

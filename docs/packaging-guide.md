@@ -321,7 +321,24 @@ Git Bash 按裸名 `fastforge` 只找 `.exe`/可执行文件，**不会解析 `.
 Windows **x64** / macOS **arm64** / Linux **x64**。
 
 > 补充：安装包文件名统一带架构后缀（工作流 `Add architecture to artifact name` 步骤重命名），
-> 如 `-windows-x64.msix` / `-macos-arm64.dmg` / `-linux-x64.AppImage`。
+> 如 `-windows-setup-x64.exe` / `-macos-arm64.dmg` / `-linux-x64.AppImage`。
+
+### 坑 18：MSIX 自签名证书被 Windows 拦截 → 换 Inno Setup + portable zip（决策）
+
+**现象**：发布后的 MSIX 安装时提示"证书无法验证"（0x800B0100/0x800B0109），无法安装。
+（证书是内置 `Msix Testing` 测试证书，非公共 CA 签发。）
+
+**根因**：MSIX 强制要求签名且签名者必须在系统受信任根中；自签名证书默认不受信任 → 硬性拦截。
+
+**解决/决策（2026-08-31）**：**弃用 MSIX**，Windows 改为：
+- **Inno Setup 安装器**（fastforge `exe` target）：未签名也**只是 SmartScreen 警告**，点"仍要运行"即可装，
+  比 MSIX 的硬性拦截宽松得多。需要 `windows/packaging/exe/make_config.yaml`，CI 上
+  `choco install innosetup` 并设 `INNO_SETUP_PATH`。
+- **portable zip**（fastforge `zip` target）：免安装、免签名、免证书，解压直接运行。
+
+**经验**：分发选型时——**MSIX 对证书要求最严格**（签名+受信任根），
+**EXE 安装器次之**（未签名仅 SmartScreen 警告），**portable zip 最宽松**（无任何证书/安装要求）。
+内测期用 zip/EXE 最省事，正式公开再上代码签名（Azure Trusted Signing / 商业证书）。
 
 ---
 

@@ -7,19 +7,19 @@
 
 | 平台 | 架构 | 格式 | 说明 |
 | ---- | ---- | ---- | ---- |
-| Windows | **x64** | **MSIX + zip** | MSIX 正式安装包（需受信证书）；**zip = portable 免安装版**，解压即用、无需签名 |
+| Windows | **x64** | **Inno Setup 安装器 + zip** | `exe` = 向导式安装器（Inno Setup，免管理员、无证书拦截）；**zip = portable 免安装版**，解压即用 |
 | macOS | **arm64** | **DMG** | 拖拽安装的磁盘映像（Apple Silicon） |
 | Linux | **x64** | **AppImage** | 免安装、便携的单文件应用 |
 
 安装包文件名带架构后缀，例如：
-`flutter_civitai_box-1.0.0+1-windows-x64.msix`、
+`flutter_civitai_box-1.0.0+1-windows-setup-x64.exe`（Inno 安装器）、
 `flutter_civitai_box-1.0.0+1-windows-x64.zip`（portable）、
 `flutter_civitai_box-1.0.0+1-macos-arm64.dmg`、
 `flutter_civitai_box-1.0.0+1-linux-x64.AppImage`。
 
-> **为什么有 zip？** MSIX 用自签名测试证书时 Windows 会拦截安装（证书不受信）。
-> portable zip **不要求签名/安装**，解压后直接运行 `flutter_civitai_box.exe`，
-> 是证书问题解决前最省事的 Windows 分发方式。
+> **为什么是 Inno Setup + zip？** 早前用的 MSIX 因自签名测试证书会被 Windows 拦截安装，
+> 已改为 **Inno Setup 安装器**（不签名也只是 SmartScreen 警告，点“仍要运行”即可）＋
+> **portable zip**（解压即用，完全不需安装）。两者都无需受信证书（2026-08-31 决策）。
 
 > 决策（2026-08-09）：Windows 只做 x64、macOS 只做 arm64、Linux 只做 x64；
 > Linux 只保留 AppImage，不做 DEB/RPM。**Linux arm64 曾尝试后放弃**
@@ -31,14 +31,14 @@
   - 安装：`dart pub global activate fastforge`
   - 本机路径：`C:\Users\GF\AppData\Local\Pub\Cache\bin\fastforge.bat`
 - 各平台 maker 依赖（CI 已自动安装）：
-  - Windows MSIX：`msix` 包自带工具链（MakeAppx / MakePri / signtool），**无需额外安装**
+  - Windows Inno Setup：`choco install innosetup`（CI 已装；fastforge 的 exe maker 用 ISCC.exe 编译）
   - macOS DMG：`appdmg`（Node 工具，`npm install -g appdmg`）
   - Linux AppImage：`appimagetool`（需下载，无 FUSE 环境用 `APPIMAGE_EXTRACT_AND_RUN=1`）
 
 ## 配置结构
 
 ```
-windows/packaging/msix/make_config.yaml   ← MSIX 元数据（显示名、发布者、标识、图标、版本）
+windows/packaging/exe/make_config.yaml    ← Inno Setup 安装器（app_id、显示名、图标、权限、语言）
 macos/packaging/dmg/make_config.yaml      ← DMG 卷宗布局（appdmg 规范）
 linux/packaging/appimage/make_config.yaml ← AppImage 桌面条目与图标
 .github/workflows/release.yml             ← GitHub Actions 发布工作流

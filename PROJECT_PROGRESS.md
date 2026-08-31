@@ -30,17 +30,21 @@
 
 | 平台 | 架构 | 格式 | 配置 | 状态 |
 | ------ | ------ | ------ | ------ | ------ |
-| Windows | x64 | MSIX | `windows/packaging/msix/make_config.yaml` | ✅ 36.2 MB |
+| Windows | x64 | Inno Setup 安装器 + zip | `windows/packaging/exe/make_config.yaml` | ✅ |
 | macOS | arm64 | DMG | `macos/packaging/dmg/make_config.yaml` | ✅ 38.4 MB |
 | Linux | x64 | AppImage | `linux/packaging/appimage/make_config.yaml` | ✅ 114 MB |
 
 - **架构决策（2026-08-09）**：
   - Windows 只支持 **x64**；macOS 只支持 **arm64**；Linux 只支持 **x64**。
-  - 安装包文件名带**处理器架构后缀**（如 `-windows-x64.msix` / `-macos-arm64.dmg` / `-linux-x64.AppImage`），
+  - 安装包文件名带**处理器架构后缀**（如 `-windows-setup-x64.exe` / `-windows-x64.zip` / `-macos-arm64.dmg` / `-linux-x64.AppImage`），
     由工作流里的 `Add architecture to artifact name` 步骤重命名。
   - **linux-arm64 尝试后放弃**：Flutter 官方对 Linux arm64 支持有限
     （`subosito/flutter-action` 对固定版 3.44.8 无 arm64 构建，且 AppImage/媒体库链路不成熟），
     2026-08-09 决策不再支持。
+
+- **Windows 分发方式（2026-08-31 决策）**：MSIX 因自签名测试证书被 Windows 拦截安装，**已弃用**，
+  改为 **Inno Setup 安装器**（fastforge `exe` target，免管理员、无证书拦截，未签名仅 SmartScreen 警告）
+  ＋ **portable zip**（解压即用）。已删除 `windows/packaging/msix/`，新增 `windows/packaging/exe/`。
 
 - **结果**：GitHub Actions Run 4 三平台全部通过，**draft release `v1.0.0`** 已生成
   （含 3 个安装包 + 源码 + 自动 changelog），等人工确认后 Publish。
@@ -69,7 +73,7 @@
     - Windows 上 fastforge 是 `fastforge.bat`，Git Bash 裸名 `fastforge` 不解析 `.bat`
       （exit 127）→ Package 步骤 Windows 显式调用 `$PUB_CACHE/bin/fastforge.bat`。
     - fastforge 路径统一用 `$PUB_CACHE/bin`（flutter-action 设置的环境变量）。
-- **待办**：正式发布前替换品牌图标（当前用 Flutter 默认图标占位）、配置真实签名证书。
+- **待办**：正式发布前替换品牌图标（当前用 Flutter 默认图标占位）；代码签名可选（Inno Setup exe 未签名仅 SmartScreen 警告）。
 - **详细文档**：`docs/packaging.md`（操作手册）、`docs/packaging-guide.md`（完整指南 + 16 个踩坑记录）。
 
 ### ✅ 2026-06-07 — Magazine 下载系统（Load → Review → Fire）— 提交 `ac77bc0`
@@ -101,20 +105,20 @@ TDD 实现的"装填 → 审阅 → 开火"下载暂存系统，已完整提交�
 
 ### 0. 打包发布 — 正式对外发布前的 3 件待办（待处理 ⏸️）
 
-- **状态**：待处理（2026-08-09 记录，用户决定之后再做）
+- **状态**：待处理（2026-08-09 记录，用户决定之后再做；2026-08-31 更新）
 - 三件事：
-  1. **替换正式品牌图标**：当前 MSIX/AppImage 用 Flutter 默认图标占位，需换成真正的
-     应用图标（512×512 PNG），并更新 `windows/packaging/msix/make_config.yaml` 的
-     `logo_path` 和 `linux/packaging/appimage/make_config.yaml` 的 `icon`。
-  2. **MSIX 真实代码签名**：当前用内置 `Msix Testing` 测试证书（安装有 SmartScreen 警告），
-     正式发布需在 `windows/packaging/msix/make_config.yaml` 配置
-     `certificate_path` / `certificate_password` / `publisher`。
+  1. **替换正式品牌图标**：当前安装包用 Flutter 默认图标占位，需换成真正的应用图标（512×512 PNG / .ico）：
+     - `windows/packaging/exe/make_config.yaml` → `setup_icon_file`（当前用 `windows/runner/resources/app_icon.ico`）
+     - `linux/packaging/appimage/make_config.yaml` → `icon`（当前用 `web/icons/Icon-512.png`）
+  2. **Windows 代码签名（可选）**：MSIX 已弃用（2026-08-31），Inno Setup 安装器不签名也只弹
+     SmartScreen 警告（"仍要运行"即可）；若想消除警告，可后续配 Azure Trusted Signing / 代码签名证书，
+     在工作流 exe 产物上签名。
   3. **macOS 公证**：当前未配置 Apple Developer 证书（Gatekeeper 会拦截），
      正式发布需开发者证书 + 公证流程（`notarytool`）。
 
-- **缓解（2026-08-31）**：Windows 新增 **portable zip** 分发（`fastforge package --targets msix,zip`）。
-  zip 免安装、免签名、免证书，解压直接运行 `flutter_civitai_box.exe`，是证书问题（待办 #2）
-  解决前最省事的 Windows 分发方式。Release 将同时提供 MSIX + zip。
+- **缓解（2026-08-31，已完成 ✅）**：Windows 改为 **Inno Setup 安装器（`exe` target）＋ portable zip**
+  双产物。两者都无需受信证书（安装器未签名仅 SmartScreen 警告；zip 完全免安装）。
+  已删除 `windows/packaging/msix/`，新增 `windows/packaging/exe/`。
 
 ### 1. 修复 4 个失败的 widget 测试（已完成 ✅）
 
