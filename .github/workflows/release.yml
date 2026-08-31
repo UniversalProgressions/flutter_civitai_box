@@ -220,7 +220,7 @@ jobs:
           repo="${{ github.repository }}"
           # 列出 release 中所有安装包类资产（exe/dmg/AppImage/zip），逐个删除
           gh release view "$tag" --repo "$repo" --json assets -q '.assets[].name' 2>/dev/null \
-            | grep -E '\.(exe|dmg|AppImage|zip)$' \
+            | grep -E '\.(exe|dmg|AppImage|zip|msix)$' \
             | while read -r name; do
                 echo "🗑 Removing stale asset: $name"
                 gh release delete-asset "$tag" --repo "$repo" --yes "$name"
