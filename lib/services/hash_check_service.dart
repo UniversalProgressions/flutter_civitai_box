@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'package:sqflite/sqflite.dart';
 
 import '../db/database.dart';
+import '../src/rust/api/simple.dart';
 import 'file_layout.dart';
 import '../settings/settings.dart';
 
@@ -19,6 +20,7 @@ class HashCheckFileResult {
   final int modelId;
   final int modelVersionId;
   final HashCheckStatus status;
+  final String? algorithm;
   final String? expectedHash;
   final String? actualHash;
   final double sizeKB;
@@ -30,6 +32,7 @@ class HashCheckFileResult {
     required this.modelId,
     required this.modelVersionId,
     required this.status,
+    this.algorithm,
     this.expectedHash,
     this.actualHash,
     required this.sizeKB,
@@ -149,12 +152,12 @@ class HashCheckService {
       final sizeKb = (row['size_kb'] as num?)?.toDouble() ?? 0;
       final versionJsonStr = row['version_json'] as String?;
 
-      String? expectedHash;
+      _Hashes? hashes;
       if (versionJsonStr != null && versionJsonStr.isNotEmpty) {
-        expectedHash = _extractSha256FromJson(versionJsonStr, fileName);
+        hashes = _extractHashesFromJson(versionJsonStr, fileName);
       }
 
-      if (expectedHash == null) {
+      if (hashes == null) {
         results.add(
           HashCheckFileResult(
             fileId: fileId,
@@ -181,15 +184,14 @@ class HashCheckService {
             modelType: row['model_type_name'] as String?,
             modelId: row['model_id'] as int,
             modelVersionId: row['model_version_id'] as int,
-            expectedHash: expectedHash,
+            blake3Hash: hashes.blake3,
+            sha256Hash: hashes.sha256,
             filePath: filePath,
             sizeKb: sizeKb,
           ),
         );
       }
     }
-
-    // Yield initial progress (skipped files already counted)
     var checked = results.length;
     if (tasks.isEmpty) {
       yield HashCheckProgress(
@@ -221,7 +223,7 @@ class HashCheckService {
     }
   }
 
-  /// Process a single file task — in a background isolate to keep UI responsive.
+  /// Process a single file task — prefers Rust BLAKE3, falls back to SHA256.
   Future<HashCheckFileResult> _processOneTask(_FileTask task) async {
     final file = File(task.filePath);
     if (!file.existsSync()) {
@@ -232,14 +234,31 @@ class HashCheckService {
         modelId: task.modelId,
         modelVersionId: task.modelVersionId,
         status: HashCheckStatus.missing,
-        expectedHash: task.expectedHash,
+        expectedHash: task.blake3Hash ?? task.sha256Hash,
         sizeKB: task.sizeKb,
       );
     }
 
+    String actual;
+    String algorithm;
     try {
-      final actual = await Isolate.run(() => _hashFile(task.filePath));
-      final passed = actual.toLowerCase() == task.expectedHash.toLowerCase();
+      if (task.blake3Hash != null) {
+        try {
+          // Runs on the flutter_rust_bridge thread pool — does not block UI.
+          actual = await blake3HashFile(path: task.filePath);
+          algorithm = 'BLAKE3';
+        } catch (_) {
+          if (task.sha256Hash == null) rethrow;
+          actual = await Isolate.run(() => _hashFile(task.filePath));
+          algorithm = 'SHA256';
+        }
+      } else {
+        actual = await Isolate.run(() => _hashFile(task.filePath));
+        algorithm = 'SHA256';
+      }
+
+      final expected = task.blake3Hash ?? task.sha256Hash!;
+      final passed = actual.toLowerCase() == expected.toLowerCase();
       return HashCheckFileResult(
         fileId: task.fileId,
         fileName: task.fileName,
@@ -247,7 +266,8 @@ class HashCheckService {
         modelId: task.modelId,
         modelVersionId: task.modelVersionId,
         status: passed ? HashCheckStatus.passed : HashCheckStatus.mismatch,
-        expectedHash: task.expectedHash,
+        algorithm: algorithm,
+        expectedHash: expected,
         actualHash: actual,
         sizeKB: task.sizeKb,
       );
@@ -259,7 +279,7 @@ class HashCheckService {
         modelId: task.modelId,
         modelVersionId: task.modelVersionId,
         status: HashCheckStatus.mismatch,
-        expectedHash: task.expectedHash,
+        expectedHash: task.blake3Hash ?? task.sha256Hash,
         actualHash: 'ERROR',
         sizeKB: task.sizeKb,
       );
@@ -270,8 +290,9 @@ class HashCheckService {
   // Helpers
   // ---------------------------------------------------------------------------
 
-  /// Extract SHA256 hash from version JSON for a given file name.
-  String? _extractSha256FromJson(String jsonStr, String fileName) {
+  /// Extract BLAKE3 and SHA256 hashes from version JSON for a given file name.
+  /// Returns null if no usable hash is found.
+  _Hashes? _extractHashesFromJson(String jsonStr, String fileName) {
     try {
       final data = const JsonDecoder().convert(jsonStr) as Map<String, dynamic>;
       final files = data['files'] as List?;
@@ -284,8 +305,15 @@ class HashCheckService {
         final hashes = f['hashes'] as Map<String, dynamic>?;
         if (hashes == null) return null;
 
+        final blake3 = hashes['BLAKE3'] as String?;
         final sha256 = hashes['SHA256'] as String?;
-        if (sha256 != null && sha256.isNotEmpty) return sha256;
+        if (blake3 != null && blake3.isNotEmpty) {
+          return _Hashes(blake3: blake3, sha256: sha256);
+        }
+        if (sha256 != null && sha256.isNotEmpty) {
+          return _Hashes(blake3: null, sha256: sha256);
+        }
+        return null;
       }
     } catch (_) {}
     return null;
@@ -310,7 +338,8 @@ class _FileTask {
   final String? modelType;
   final int modelId;
   final int modelVersionId;
-  final String expectedHash;
+  final String? blake3Hash;
+  final String? sha256Hash;
   final String filePath;
   final double sizeKb;
 
@@ -320,7 +349,8 @@ class _FileTask {
     this.modelType,
     required this.modelId,
     required this.modelVersionId,
-    required this.expectedHash,
+    this.blake3Hash,
+    this.sha256Hash,
     required this.filePath,
     required this.sizeKb,
   });
@@ -335,4 +365,11 @@ Future<String> _hashFile(String filePath) async {
   final file = File(filePath);
   final digest = await crypto.sha256.bind(file.openRead()).first;
   return digest.toString().toUpperCase();
+}
+
+/// Holds the expected hashes extracted from the version JSON.
+class _Hashes {
+  final String? blake3;
+  final String? sha256;
+  const _Hashes({this.blake3, this.sha256});
 }

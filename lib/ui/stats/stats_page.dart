@@ -402,7 +402,7 @@ class _StatsPageState extends State<StatsPage> {
         subtitle: Text(
           r.status == HashCheckStatus.missing
               ? 'File not found on disk'
-              : 'Hash mismatch (SHA256)',
+              : 'Hash mismatch (${r.algorithm ?? 'SHA256'})',
           style: TextStyle(fontSize: 11, color: color),
         ),
         tilePadding: EdgeInsets.zero,

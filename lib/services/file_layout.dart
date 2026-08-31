@@ -113,4 +113,5 @@ String getUserCustomVersionNotePath(
   int versionId,
 ) =>
     p.join(getUserCustomMarkdownNotesDir(basePath), '${modelId}_$versionId.md');
+
 /// `{basePath}/{modelType}/{modelId}/{versionId}/{versionId}.api-info.json`

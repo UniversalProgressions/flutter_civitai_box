@@ -9,6 +9,7 @@ import 'services/download/download_magazine_database.dart';
 import 'services/download/download_database.dart';
 import 'services/download/download_task.dart';
 import 'services/logger.dart';
+import 'src/rust/frb_generated.dart';
 import 'ui/download/download_page.dart';
 import 'ui/local_models/local_models_page.dart';
 import 'ui/settings/settings_page.dart';
@@ -20,6 +21,7 @@ void main() async {
   MediaKit.ensureInitialized();
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
+  await RustLib.init();
   await DownloadQueue.instance.init();
   await _recoverMagazineFromCrash();
   await NsfwSettings.getInstance(); // init & restore persisted mode

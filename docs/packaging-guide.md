@@ -331,6 +331,7 @@ Windows **x64** / macOS **arm64** / Linux **x64**。
 **根因**：MSIX 强制要求签名且签名者必须在系统受信任根中；自签名证书默认不受信任 → 硬性拦截。
 
 **解决/决策（2026-08-31）**：**弃用 MSIX**，Windows 改为：
+
 - **Inno Setup 安装器**（fastforge `exe` target）：未签名也**只是 SmartScreen 警告**，点"仍要运行"即可装，
   比 MSIX 的硬性拦截宽松得多。需要 `windows/packaging/exe/make_config.yaml`，CI 上
   `choco install innosetup` 并设 `INNO_SETUP_PATH`。
@@ -340,14 +341,45 @@ Windows **x64** / macOS **arm64** / Linux **x64**。
 **EXE 安装器次之**（未签名仅 SmartScreen 警告），**portable zip 最宽松**（无任何证书/安装要求）。
 内测期用 zip/EXE 最省事，正式公开再上代码签名（Azure Trusted Signing / 商业证书）。
 
+### 坑 19：换掉 MSIX 后忘了删工作流里的 MSIX 注入步骤
+
+**现象**：Windows job 报
+`sed: can't read windows/packaging/msix/make_config.yaml: No such file or directory`（exit 2）。
+
+**根因**：把 `targets: msix` 改成 `exe,zip` 后，工作流里残留的
+`Inject MSIX version` 步骤（`sed` 改 `msix_version`）还在跑，但 `windows/packaging/msix/` 已删除。
+
+**解决**：删除该步骤。Inno Setup 的版本号由 exe maker 自动从 pubspec 读取，无需注入。
+
+### 坑 20：Inno 配置 YAML 双引号里的 `\` 被当转义
+
+**现象**：`fastforge package` 解析 `windows/packaging/exe/make_config.yaml` 时报
+`Error on line 22, column 43: Unknown escape character`（指向 `install_dir_name: "{localappdata}\Programs\..."`）。
+
+**根因**：YAML 双引号字符串会把 `\P` 当转义序列；Windows 路径里的单反斜杠在双引号里不合法。
+
+**解决**：改用**单引号**包裹含反斜杠的值：
+`install_dir_name: '{localappdata}\Programs\CivitAI Box'`（单引号不处理转义）。
+
+### 坑 21：Inno AppId 必须是双左花括号 `{{GUID}`
+
+**现象**：ISCC 编译报
+`Error on line 2 ... Unknown constant "90bd9d36-...". Use two consecutive "{" characters...`（Compile aborted）。
+
+**根因**：Inno Setup 的 `AppId` 规范格式是 `AppId={{GUID}`——**两个**左花括号（`{{` 转义出字面 `{`）+ GUID + 一个右花括号。
+配了单个 `{90bd9d36-...}` 会被 Inno 当成常量引用而报错。
+
+**解决**：`app_id: "{{90bd9d36-c15c-4712-9ba6-a754b1f8ada8}"`（双左花括号）。
+
 ---
 
 ## 5. 验证与排查速查
 
 | 需求 | 命令/方法 |
 | ---- | --------- |
-| 本地打 MSIX | `fastforge package --platform windows --targets msix --skip-clean` |
-| 验证 MSIX 签名 | `signtool.exe verify /pa /v <file.msix>`（用 msix 包自带工具） |
+| 本地打 Windows Inno 安装器 | `fastforge package --platform windows --targets exe --skip-clean`（需本机装 Inno Setup 6） |
+| 本地打 Windows portable zip | `fastforge package --platform windows --targets zip --skip-clean` |
+| 验证 MSIX 签名（已弃用） | `signtool.exe verify /pa /v <file.msix>`（用 msix 包自带工具） |
 | 查看 MSIX 清单 | 解压后读 `AppxManifest.xml`（MSIX 本质是 zip） |
 | 看 fastforge 实际支持什么 | `fastforge package --help`（别信旧文档） |
 | 读 UTF-16 构建日志 | `& "C:\Windows\System32\cmd.exe" /c "type <file>"` |
