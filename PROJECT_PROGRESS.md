@@ -112,6 +112,10 @@ TDD 实现的"装填 → 审阅 → 开火"下载暂存系统，已完整提交�
   3. **macOS 公证**：当前未配置 Apple Developer 证书（Gatekeeper 会拦截），
      正式发布需开发者证书 + 公证流程（`notarytool`）。
 
+- **缓解（2026-08-31）**：Windows 新增 **portable zip** 分发（`fastforge package --targets msix,zip`）。
+  zip 免安装、免签名、免证书，解压直接运行 `flutter_civitai_box.exe`，是证书问题（待办 #2）
+  解决前最省事的 Windows 分发方式。Release 将同时提供 MSIX + zip。
+
 ### 1. 修复 4 个失败的 widget 测试（已完成 ✅）
 
 - **状态**：已修复（2026-08-08）

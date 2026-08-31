@@ -104,23 +104,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Windows 同时产出：MSIX（正式安装包）+ zip（portable 免安装版）
           - name: windows-x64
             os: windows-latest
             platform: windows
-            targets: msix
-            ext: msix
+            targets: msix,zip
             arch: x64
           - name: macos-arm64
             os: macos-14
             platform: macos
             targets: dmg
-            ext: dmg
             arch: arm64
           - name: linux-x64
             os: ubuntu-latest
             platform: linux
             targets: appimage
-            ext: AppImage
             arch: x64
     steps:
       - uses: actions/checkout@v4
@@ -176,23 +174,30 @@ jobs:
           if [ -f "$FF.bat" ]; then FF="$FF.bat"; fi
           "$FF" package --platform ${{ matrix.platform }} --targets ${{ matrix.targets }}
 
-      # 在文件名中标注处理器架构，例如 ...-windows-x64.msix / ...-linux-arm64.AppImage
+      # 在文件名中标注处理器架构，例如 ...-windows-x64.msix / ...-windows-x64.zip
+      # 通用处理该平台所有产物（可能多个扩展名），且幂等（已有架构后缀则跳过）
       - name: Add architecture to artifact name
         shell: bash
         run: |
-          for f in dist/*/*.${{ matrix.ext }}; do
+          for f in dist/*/*; do
+            [ -f "$f" ] || continue
             dir="$(dirname "$f")"
             name="$(basename "$f")"
-            new="$(echo "$name" | sed -E "s/\.${{ matrix.ext }}$/-${{ matrix.arch }}.${{ matrix.ext }}/")"
-            mv "$f" "$dir/$new"
-            echo "✅ $name → $new"
+            case "$name" in
+              *"-${{ matrix.arch }}."*) echo "skip (already has arch): $name" ;;
+              *)
+                new="$(echo "$name" | sed -E 's/\.([A-Za-z0-9]+)$/-${{ matrix.arch }}.\1/')"
+                mv "$f" "$dir/$new"
+                echo "✅ $name → $new"
+                ;;
+            esac
           done
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.name }}
-          path: dist/**/*.${{ matrix.ext }}
+          path: dist/**
           if-no-files-found: error
 
   publish:
@@ -217,7 +222,7 @@ jobs:
           repo="${{ github.repository }}"
           # 列出 release 中所有安装包类资产（msix/dmg/AppImage），逐个删除
           gh release view "$tag" --repo "$repo" --json assets -q '.assets[].name' 2>/dev/null \
-            | grep -E '\.(msix|dmg|AppImage)$' \
+            | grep -E '\.(msix|dmg|AppImage|zip)$' \
             | while read -r name; do
                 echo "🗑 Removing stale asset: $name"
                 gh release delete-asset "$tag" --repo "$repo" --yes "$name"
@@ -236,6 +241,7 @@ jobs:
             artifacts/**/*.msix
             artifacts/**/*.dmg
             artifacts/**/*.AppImage
+            artifacts/**/*.zip
           draft: true
           generate_release_notes: true
           overwrite: true

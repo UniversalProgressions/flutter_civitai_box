@@ -7,14 +7,19 @@
 
 | 平台 | 架构 | 格式 | 说明 |
 | ---- | ---- | ---- | ---- |
-| Windows | **x64** | **MSIX** | 现代 Windows 安装格式，支持自动更新、干净卸载 |
+| Windows | **x64** | **MSIX + zip** | MSIX 正式安装包（需受信证书）；**zip = portable 免安装版**，解压即用、无需签名 |
 | macOS | **arm64** | **DMG** | 拖拽安装的磁盘映像（Apple Silicon） |
 | Linux | **x64** | **AppImage** | 免安装、便携的单文件应用 |
 
 安装包文件名带架构后缀，例如：
 `flutter_civitai_box-1.0.0+1-windows-x64.msix`、
+`flutter_civitai_box-1.0.0+1-windows-x64.zip`（portable）、
 `flutter_civitai_box-1.0.0+1-macos-arm64.dmg`、
 `flutter_civitai_box-1.0.0+1-linux-x64.AppImage`。
+
+> **为什么有 zip？** MSIX 用自签名测试证书时 Windows 会拦截安装（证书不受信）。
+> portable zip **不要求签名/安装**，解压后直接运行 `flutter_civitai_box.exe`，
+> 是证书问题解决前最省事的 Windows 分发方式。
 
 > 决策（2026-08-09）：Windows 只做 x64、macOS 只做 arm64、Linux 只做 x64；
 > Linux 只保留 AppImage，不做 DEB/RPM。**Linux arm64 曾尝试后放弃**
