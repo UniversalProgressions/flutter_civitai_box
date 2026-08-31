@@ -139,15 +139,6 @@ jobs:
           echo "$PUB_CACHE/bin" >> "$GITHUB_PATH"
           echo "PUB_BIN=$PUB_CACHE/bin"
 
-      # 将发布版本注入 MSIX 配置（格式 a.b.c.d，第四段固定为 1）
-      - name: Inject MSIX version
-        if: matrix.platform == 'windows'
-        shell: bash
-        run: |
-          ver="${{ needs.prepare.outputs.version }}"
-          sed -i "s/^msix_version: .*/msix_version: ${ver}.1/" windows/packaging/msix/make_config.yaml
-          grep '^msix_version:' windows/packaging/msix/make_config.yaml
-
       # Linux 构建依赖 + appimagetool（无 FUSE 环境用 extract-and-run）
       # libasound2-dev = volume_controller 的 ALSA；libmpv-dev = media_kit_video 的 mpv
       - name: Install Linux build tools
@@ -181,7 +172,7 @@ jobs:
           if [ -f "$FF.bat" ]; then FF="$FF.bat"; fi
           "$FF" package --platform ${{ matrix.platform }} --targets ${{ matrix.targets }}
 
-      # 在文件名中标注处理器架构，例如 ...-windows-x64.msix / ...-windows-x64.zip
+      # 在文件名中标注处理器架构，例如 ...-windows-setup-x64.exe / ...-windows-x64.zip
       # 通用处理该平台所有产物（可能多个扩展名），且幂等（已有架构后缀则跳过）
       - name: Add architecture to artifact name
         shell: bash
@@ -218,7 +209,7 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # 删除 release 中旧的安装包资产（如无架构后缀的 -windows.msix / -macos.dmg / -linux.AppImage），
+      # 删除 release 中旧的安装包资产（如无架构后缀的 -windows-setup.exe / -macos.dmg / -linux.AppImage），
       # 避免与本次带架构后缀的新文件重复。重新打包时保证 release 里只有最新一套安装包。
       - name: Remove stale installer assets
         shell: bash
@@ -227,7 +218,7 @@ jobs:
         run: |
           tag="${{ needs.prepare.outputs.tag }}"
           repo="${{ github.repository }}"
-          # 列出 release 中所有安装包类资产（msix/dmg/AppImage），逐个删除
+          # 列出 release 中所有安装包类资产（exe/dmg/AppImage/zip），逐个删除
           gh release view "$tag" --repo "$repo" --json assets -q '.assets[].name' 2>/dev/null \
             | grep -E '\.(exe|dmg|AppImage|zip)$' \
             | while read -r name; do
