@@ -3,7 +3,8 @@
 # 需要 Inno Setup 6（CI 上通过 choco 安装，设 INNO_SETUP_PATH）
 
 # 应用的唯一 ID（Inno Setup GUID 格式，固定不变，用于卸载/升级识别）
-app_id: "{90bd9d36-c15c-4712-9ba6-a754b1f8ada8}"
+# 注意 Inno 要求 AppId={{GUID}：两个左花括号 + GUID + 一个右花括号（{{ 是字面 { 的转义）
+app_id: "{{90bd9d36-c15c-4712-9ba6-a754b1f8ada8}"
 
 # 安装时显示的名称
 display_name: CivitAI Box
