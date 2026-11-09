@@ -62,6 +62,7 @@ dependencies:
   rust_lib_flutter_civitai_box:
     path: rust_builder
   flutter_rust_bridge: 2.13.0
+  webview_all: ^1.4.1
 
 dev_dependencies:
   flutter_test:

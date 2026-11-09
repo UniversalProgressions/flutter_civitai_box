@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../civitai_api/utils.dart';
 import '../../db/db.dart';
+import '../../db/repository/model_version_repository.dart';
 import '../../services/file_layout.dart';
 import '../../services/model_refresh_bus.dart';
 import '../../settings/nsfw_settings.dart';
@@ -40,6 +41,19 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
   final _jumpCtrl = TextEditingController();
   final _jumpFocus = FocusNode();
 
+  // ---------------------------------------------------------------------------
+  // Batch selection state
+  // ---------------------------------------------------------------------------
+
+  /// Whether we're in selection mode.
+  bool _selectionMode = false;
+
+  /// Set of selected model IDs.
+  final Set<int> _selectedModelIds = {};
+
+  /// Whether a batch delete operation is in progress.
+  bool _deleting = false;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +69,172 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
     _jumpCtrl.dispose();
     _jumpFocus.dispose();
     super.dispose();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Batch selection helpers
+  // ---------------------------------------------------------------------------
+
+  void _enterSelectionMode() {
+    setState(() {
+      _selectionMode = true;
+      _selectedModelIds.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedModelIds.clear();
+    });
+  }
+
+  void _toggleSelection(int modelId) {
+    setState(() {
+      if (_selectedModelIds.contains(modelId)) {
+        _selectedModelIds.remove(modelId);
+      } else {
+        _selectedModelIds.add(modelId);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      for (final m in _models) {
+        _selectedModelIds.add(m['id'] as int);
+      }
+    });
+  }
+
+  void _deselectAll() {
+    setState(() {
+      _selectedModelIds.clear();
+    });
+  }
+
+  bool get _isAllSelected =>
+      _models.isNotEmpty && _selectedModelIds.length == _models.length;
+
+  Future<void> _confirmBatchDelete() async {
+    if (_selectedModelIds.isEmpty) return;
+
+    final count = _selectedModelIds.length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Models'),
+        content: Text(
+          'Are you sure you want to delete $count model${count == 1 ? '' : 's'}?\n\n'
+          'This will remove the model data from the database and delete all associated files from disk.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await _performBatchDelete();
+  }
+
+  Future<void> _performBatchDelete() async {
+    setState(() => _deleting = true);
+
+    final settings = await SettingsService.getInstance();
+    final basePath = settings.settingsOrNull?.basePath ?? '';
+
+    int successCount = 0;
+    int failCount = 0;
+
+    // Get model type for each selected model to know which folder to delete
+    final db = await CivitaiDatabase.instance;
+    final repo = ModelVersionRepository();
+
+    for (final modelId in _selectedModelIds) {
+      try {
+        // Get model info including type
+        final modelRow = await db.db.query(
+          'model',
+          columns: ['id', 'type_id'],
+          where: 'id = ?',
+          whereArgs: [modelId],
+        );
+        if (modelRow.isEmpty) continue;
+
+        final typeId = modelRow.first['type_id'] as int;
+        final typeRows = await db.db.query(
+          'model_type',
+          columns: ['name'],
+          where: 'id = ?',
+          whereArgs: [typeId],
+        );
+        final typeName = typeRows.isNotEmpty
+            ? typeRows.first['name'] as String
+            : 'Unknown';
+
+        // Get all versions for this model
+        final versionRows = await db.db.query(
+          'model_version',
+          columns: ['id'],
+          where: 'model_id = ?',
+          whereArgs: [modelId],
+        );
+
+        // Delete each version (this handles DB cleanup)
+        for (final vRow in versionRows) {
+          final versionId = vRow['id'] as int;
+          await repo.deleteVersion(versionId);
+        }
+
+        // Delete the model folder from disk
+        final modelDir = Directory(getModelIdPath(basePath, typeName, modelId));
+        if (modelDir.existsSync()) {
+          await modelDir.delete(recursive: true);
+        }
+
+        successCount++;
+      } catch (e) {
+        failCount++;
+        debugPrint('Failed to delete model $modelId: $e');
+      }
+    }
+
+    // Notify refresh bus
+    ModelRefreshBus.instance.notify();
+
+    if (!mounted) return;
+
+    setState(() {
+      _deleting = false;
+      _selectionMode = false;
+      _selectedModelIds.clear();
+    });
+
+    // Show result snackbar
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            failCount > 0
+                ? 'Deleted $successCount models, $failCount failed'
+                : 'Successfully deleted $successCount model${successCount == 1 ? '' : 's'}',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   void _onNsfwChanged() {
@@ -218,69 +398,130 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Local Models')),
-      body: _models.isEmpty && _loading
-          ? const ShimmerGrid()
-          : Column(
-              children: [
-                Expanded(
-                  child: _models.isEmpty
-                      ? Center(
-                          child: JellyDriftIn(
-                            show: true,
-                            child: Text(
-                              _filters.hasActiveFilters
-                                  ? 'No models match your filters.'
-                                  : 'No models found. Scan your models folder first.',
-                            ),
-                          ),
-                        )
-                      : AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: LayoutBuilder(
-                            key: ValueKey(_gridVersion),
-                            builder: (context, constraints) {
-                              final cols = (constraints.maxWidth / 240).ceil();
-                              final crossAxisCount = cols < 2
-                                  ? 2
-                                  : (cols > 6 ? 6 : cols);
-                              return GridView.builder(
-                                padding: const EdgeInsets.all(8),
-                                gridDelegate:
-                                    SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: crossAxisCount,
-                                      childAspectRatio: 0.75,
-                                      crossAxisSpacing: 8,
-                                      mainAxisSpacing: 8,
-                                    ),
-                                itemCount: _models.length,
-                                itemBuilder: (_, i) {
-                                  final m = _models[i];
-                                  // Guard: if _firstImages is out of sync
-                                  // (stale fetch), show no image.
-                                  final img = i < _firstImages.length
-                                      ? _firstImages[i]
-                                      : null;
-                                  return _AnimatedModelCard(
-                                    index: i,
-                                    child: ModelCard(
-                                      modelId: m['id'] as int,
-                                      name: m['name'] as String,
-                                      typeName:
-                                          m['type_name'] as String? ?? 'Other',
-                                      firstImagePath: img,
-                                    ),
+      appBar: _selectionMode ? _buildSelectionAppBar() : AppBar(
+        title: const Text('Local Models'),
+        actions: [
+          if (_models.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.checklist_outlined),
+              tooltip: 'Select models',
+              onPressed: _enterSelectionMode,
+            ),
+        ],
+      ),
+      body: _deleting
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Deleting models...'),
+                ],
+              ),
+            )
+          : _models.isEmpty && _loading
+              ? const ShimmerGrid()
+              : Column(
+                  children: [
+                    Expanded(
+                      child: _models.isEmpty
+                          ? Center(
+                              child: JellyDriftIn(
+                                show: true,
+                                child: Text(
+                                  _filters.hasActiveFilters
+                                      ? 'No models match your filters.'
+                                      : 'No models found. Scan your models folder first.',
+                                ),
+                              ),
+                            )
+                          : AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 300),
+                              child: LayoutBuilder(
+                                key: ValueKey(_gridVersion),
+                                builder: (context, constraints) {
+                                  final cols = (constraints.maxWidth / 240).ceil();
+                                  final crossAxisCount = cols < 2
+                                      ? 2
+                                      : (cols > 6 ? 6 : cols);
+                                  return GridView.builder(
+                                    padding: const EdgeInsets.all(8),
+                                    gridDelegate:
+                                        SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount: crossAxisCount,
+                                          childAspectRatio: 0.75,
+                                          crossAxisSpacing: 8,
+                                          mainAxisSpacing: 8,
+                                        ),
+                                    itemCount: _models.length,
+                                    itemBuilder: (_, i) {
+                                      final m = _models[i];
+                                      final modelId = m['id'] as int;
+                                      // Guard: if _firstImages is out of sync
+                                      // (stale fetch), show no image.
+                                      final img = i < _firstImages.length
+                                          ? _firstImages[i]
+                                          : null;
+                                      return _AnimatedModelCard(
+                                        index: i,
+                                        child: ModelCard(
+                                          modelId: modelId,
+                                          name: m['name'] as String,
+                                          typeName:
+                                              m['type_name'] as String? ?? 'Other',
+                                          firstImagePath: img,
+                                          selectionMode: _selectionMode,
+                                          isSelected: _selectedModelIds.contains(modelId),
+                                          onSelectionToggle: _selectionMode
+                                              ? () => _toggleSelection(modelId)
+                                              : () => _enterSelectionModeAndSelect(modelId),
+                                        ),
+                                      );
+                                    },
                                   );
                                 },
-                              );
-                            },
-                          ),
-                        ),
+                              ),
+                            ),
+                    ),
+                    _buildPagination(),
+                  ],
                 ),
-                _buildPagination(),
-              ],
-            ),
     );
+  }
+
+  PreferredSizeWidget _buildSelectionAppBar() {
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.close),
+        onPressed: _exitSelectionMode,
+      ),
+      title: Text('${_selectedModelIds.length} selected'),
+      actions: [
+        IconButton(
+          icon: Icon(_isAllSelected ? Icons.deselect : Icons.select_all),
+          tooltip: _isAllSelected ? 'Deselect all' : 'Select all',
+          onPressed: _isAllSelected ? _deselectAll : _selectAll,
+        ),
+        const SizedBox(width: 8),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+          onPressed: _selectedModelIds.isEmpty ? null : _confirmBatchDelete,
+          icon: const Icon(Icons.delete_outline),
+          label: Text('Delete (${_selectedModelIds.length})'),
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  void _enterSelectionModeAndSelect(int modelId) {
+    setState(() {
+      _selectionMode = true;
+      _selectedModelIds.add(modelId);
+    });
   }
 
   void _jumpToPage() {
